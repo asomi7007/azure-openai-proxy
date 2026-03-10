@@ -2,6 +2,7 @@ import https from 'node:https';
 import http from 'node:http';
 import { log, logError } from './utils/logger.mjs';
 import { convertResponseChatToResponses, createResponsesStreamTransformer } from './transformers/responses-to-chat.mjs';
+import { convertOpenAIToAnthropic, OpenAIToAnthropicStreamTransformer } from './transformers/openai-to-anthropic.mjs';
 
 /**
  * Anthropic 에러 형식으로 변환 (Azure → Anthropic)
@@ -150,6 +151,27 @@ export function proxyRequest(clientReq, clientRes, targetUrl, headers, bodyBuffe
           }
         }
 
+        // OpenAI → Anthropic 응답 변환 (Claude Code에서 OpenAI 모델 요청했을 때)
+        if (isAnthropicRoute && statusCode === 200 && !isResponsesApi) {
+          try {
+            const openaiBody = JSON.parse(bodyStr);
+            // OpenAI 응답 포맷 확인 (choices 필드)
+            if (openaiBody.choices) {
+              const anthropicBody = convertOpenAIToAnthropic(openaiBody);
+              const convertedStr = JSON.stringify(anthropicBody);
+              log('PROXY', `OpenAI→Anthropic (non-stream) converted`);
+              const convertedBuf = Buffer.from(convertedStr, 'utf-8');
+              if (!clientRes.headersSent) {
+                clientRes.writeHead(statusCode, { ...proxyRes.headers, 'content-type': 'application/json', 'content-length': String(convertedBuf.length) });
+              }
+              clientRes.end(convertedBuf);
+              return;
+            }
+          } catch (e) {
+            logError('PROXY', `OpenAI→Anthropic conversion failed: ${e.message}`);
+          }
+        }
+
         if (!clientRes.headersSent) {
           clientRes.writeHead(statusCode, proxyRes.headers);
         }
@@ -168,11 +190,10 @@ export function proxyRequest(clientReq, clientRes, targetUrl, headers, bodyBuffe
       return;
     }
 
-    // Streaming: Responses API면 SSE 변환, 아니면 그대로 pipe
+    // Streaming: Responses API면 SSE 변환, OpenAI→Anthropic 변환, 아니면 그대로 pipe
     if (isResponsesApi) {
       log('PROXY', `Stream (Responses API SSE transform)`);
       const responseHeaders = { ...proxyRes.headers };
-      // content-length 제거 (변환 후 길이가 달라지므로)
       delete responseHeaders['content-length'];
       clientRes.writeHead(statusCode, responseHeaders);
 
@@ -186,6 +207,31 @@ export function proxyRequest(clientReq, clientRes, targetUrl, headers, bodyBuffe
         if (flushed) clientRes.write(flushed);
         clientRes.end();
         log('PROXY', 'Stream done (Responses API)');
+      });
+      proxyRes.on('error', (err) => {
+        logError('PROXY', `Response stream error: ${err.message}`);
+        clientRes.end();
+      });
+      return;
+    }
+
+    // Streaming OpenAI → Anthropic 변환
+    if (isAnthropicRoute) {
+      log('PROXY', `Stream (OpenAI→Anthropic SSE transform)`);
+      const responseHeaders = { ...proxyRes.headers };
+      delete responseHeaders['content-length'];
+      clientRes.writeHead(statusCode, responseHeaders);
+
+      const transformer = new OpenAIToAnthropicStreamTransformer();
+      proxyRes.on('data', (chunk) => {
+        const transformed = transformer.transform(chunk);
+        if (transformed) clientRes.write(transformed);
+      });
+      proxyRes.on('end', () => {
+        const flushed = transformer.flush();
+        if (flushed) clientRes.write(flushed);
+        clientRes.end();
+        log('PROXY', 'Stream done (OpenAI→Anthropic)');
       });
       proxyRes.on('error', (err) => {
         logError('PROXY', `Response stream error: ${err.message}`);
