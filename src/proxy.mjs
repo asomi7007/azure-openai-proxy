@@ -59,9 +59,12 @@ function parseRetryAfterSeconds(bodyStr) {
  * @param {object} headers - Transformed headers
  * @param {Buffer} bodyBuffer - Request body as Buffer
  * @param {boolean} isStreaming - Whether this is a streaming request
- * @param {boolean} isAnthropicRoute - Whether this is an Anthropic route
+ * @param {boolean} isAnthropicRoute - Whether target is in Anthropic format
+ * @param {boolean} isResponsesApi - Whether this is a Responses API request
+ * @param {string} responsesApiModel - Responses API model name
+ * @param {boolean} originalClientRoute - Original client route (for response conversion)
  */
-export function proxyRequest(clientReq, clientRes, targetUrl, headers, bodyBuffer, isStreaming, isAnthropicRoute = false, isResponsesApi = false, responsesApiModel = '', _retryCount = 0) {
+export function proxyRequest(clientReq, clientRes, targetUrl, headers, bodyBuffer, isStreaming, isAnthropicRoute = false, isResponsesApi = false, responsesApiModel = '', originalClientRoute = false, _retryCount = 0) {
   const url = new URL(targetUrl);
   const isHttps = url.protocol === 'https:';
   const transport = isHttps ? https : http;
@@ -112,7 +115,7 @@ export function proxyRequest(clientReq, clientRes, targetUrl, headers, bodyBuffe
             const waitSec = (parsedSec != null ? parsedSec : 60) + 10;
             log('PROXY', `Rate limited. Retrying after ${waitSec}s${parsedSec != null ? ` (${parsedSec}+10)` : ' (fallback)'} (attempt ${_retryCount + 1}/3)...`);
             setTimeout(() => {
-              proxyRequest(clientReq, clientRes, targetUrl, headers, bodyBuffer, isStreaming, isAnthropicRoute, isResponsesApi, responsesApiModel, _retryCount + 1);
+              proxyRequest(clientReq, clientRes, targetUrl, headers, bodyBuffer, isStreaming, isAnthropicRoute, isResponsesApi, responsesApiModel, originalClientRoute, _retryCount + 1);
             }, waitSec * 1000);
             return;
           }
@@ -152,7 +155,8 @@ export function proxyRequest(clientReq, clientRes, targetUrl, headers, bodyBuffe
         }
 
         // OpenAI → Anthropic 응답 변환 (Claude Code에서 OpenAI 모델 요청했을 때)
-        if (isAnthropicRoute && statusCode === 200 && !isResponsesApi) {
+        // originalClientRoute가 true면 client는 Anthropic 형식 요청 → response도 Anthropic 형식으로 변환
+        if (originalClientRoute && statusCode === 200 && !isResponsesApi) {
           try {
             const openaiBody = JSON.parse(bodyStr);
             // OpenAI 응답 포맷 확인 (choices 필드)
@@ -216,7 +220,8 @@ export function proxyRequest(clientReq, clientRes, targetUrl, headers, bodyBuffe
     }
 
     // Streaming OpenAI → Anthropic 변환
-    if (isAnthropicRoute) {
+    // originalClientRoute가 true면 client는 Anthropic 형식 요청 → response도 Anthropic 형식으로 변환
+    if (originalClientRoute) {
       log('PROXY', `Stream (OpenAI→Anthropic SSE transform)`);
       const responseHeaders = { ...proxyRes.headers };
       delete responseHeaders['content-length'];

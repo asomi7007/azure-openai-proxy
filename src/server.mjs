@@ -99,6 +99,7 @@ export function createProxyServer(config) {
       // /anthropic/* 또는 /v1/messages → Anthropic Claude
       // /openai/*, /v1/responses, /v1/chat/completions → Azure OpenAI
       let isAnthropicRoute = req.url.startsWith('/anthropic') || req.url.startsWith('/v1/messages');
+      let originalClientRoute = isAnthropicRoute; // ← 원래 client 라우트 저장 (response 변환용)
       let targetPath = req.url;
 
       // OpenAI 경로 정규화: /openai/responses → /openai/v1/responses
@@ -219,7 +220,8 @@ export function createProxyServer(config) {
       const transformedHeaders = transformHeaders(req.headers, isAnthropicRoute, config);
 
       // Proxy the request
-      proxyRequest(req, res, targetUrl, transformedHeaders, bodyBuffer, isStreaming, isAnthropicRoute, isResponsesApi, responsesApiModel);
+      // originalClientRoute 전달: response conversion은 원래 client route 기준으로 결정
+      proxyRequest(req, res, targetUrl, transformedHeaders, bodyBuffer, isStreaming, isAnthropicRoute, isResponsesApi, responsesApiModel, originalClientRoute);
     } catch (err) {
       logError('SERVER', `Unhandled error: ${err.message}`);
       logError('SERVER', `Stack: ${err.stack}`);
