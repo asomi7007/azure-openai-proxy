@@ -1,0 +1,52 @@
+server:
+  port: 8081
+
+azure:
+  baseUrl: "https://claude-opus-4-5-resource-kr.services.ai.azure.com"
+  openAIBaseUrl: "https://claude-opus-4-5-resource-kr.openai.azure.com"
+  openAIApiVersion: "2024-05-01-preview"
+  openAIResponsesApiVersion: "preview"
+  # apiKey는 .env에서 로드
+
+unsupportedParams:
+  - prompt_cache_retention
+  - prompt_cache_key
+
+modelNameMap:
+  # Claude Opus
+  claude-opus-4-6: claude-opus-4-6
+  claude-opus-4-5-20251101: claude-opus-4-5
+  claude-opus-4-5-20250929: claude-opus-4-6
+  # Claude Sonnet (이제 전용 배포 있음)
+  claude-sonnet-4-6: claude-sonnet-4-6
+  claude-sonnet-4-5: claude-sonnet-4-5
+  claude-sonnet-4-5-20250929: claude-sonnet-4-5
+  claude-sonnet-4-20250514: claude-sonnet-4-5
+  # Claude Haiku (→ Sonnet으로 대체)
+  claude-haiku-4-5-20251001: claude-sonnet-4-5
+  # GPT
+  gpt-5.2-chat: gpt-5.2-chat
+  gpt-5.3-codex: gpt-5.3-codex
+  gpt-5.4: gpt-5.4
+  gpt-5.4-pro: gpt-5.4-pro
+
+# Azure Responses API를 네이티브로 지원하는 모델 (변환 없이 직접 전달)
+# api-version: openAIResponsesApiVersion 사용
+nativeResponsesModels:
+  - gpt-5.3-codex
+
+# chat/completions 대신 /completions 엔드포인트를 사용하는 모델 (Codex 계열)
+completionsModels: []
+
+# 이 모델들은 Anthropic 형식으로 들어와도 Azure OpenAI로 자동 변환·라우팅
+openAIModels:
+  - gpt-5.2-chat
+  - gpt-5.3-codex
+  - gpt-5.4
+  - gpt-5.4-pro
+
+unsupportedAnthropicBetas:
+  - prompt-caching-2024-07-31
+  - fine-grained-tool-streaming-2025-05-14
+  - output-128k-2025-02-19
+  - context-1m-2025-08-07
