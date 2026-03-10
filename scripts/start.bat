@@ -16,7 +16,7 @@ echo.
 echo ========================================
 echo   Azure OpenAI Proxy - Starting...
 echo ========================================
-echo   Model Profile: %PROXY_MODEL_PROFILE%
+echo   Active Profile: %PROXY_MODEL_PROFILE%
 echo.
 
 :: Check if node is available

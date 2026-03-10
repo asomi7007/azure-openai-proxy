@@ -138,7 +138,7 @@ scripts\claude-code.bat
 
 ### 방법 3: 대화형 셸 (Proxy Shell)
 
-프록시를 백그라운드로 시작하고, 환경변수가 설정된 대화형 셸을 엽니다. 이 셸에서 `claude`, `roo` 등 원하는 도구를 자유롭게 실행할 수 있습니다.
+프록시를 백그라운드로 시작하고, 환경변수가 설정된 대화형 셸을 엽니다. 이 셸에서 `claude`, `roo`, 기타 CLI 도구를 자유롭게 실행할 수 있습니다.
 
 ```cmd
 scripts\proxy-shell.bat
@@ -191,16 +191,33 @@ scripts\stop.bat
 - 실행 시 `PROXY_MODEL_PROFILE` 환경변수 또는 `scripts\start.bat <profile>`로 선택
 - 선택된 프로필은 기본 설정 위에 덮어쓰는 방식으로 적용
 
-## Roo Code 프로필 설정
+## 클라이언트 연결 예시
+
+프록시 시작 후 콘솔에는 다음과 같은 요약 정보가 표시됩니다.
+
+- **Anthropic API**: `http://localhost:8081/anthropic`
+- **OpenAI API**: `http://localhost:8081/openai`
+- **API key**: 아무 non-empty 값
+- **Profile**: 현재 적용된 `PROXY_MODEL_PROFILE`
+- **Claude Opus / Claude Sonnet**: 선택한 프로필이 기본 매핑을 변경한 경우에만 표시
+
+### Anthropic 호환 클라이언트
 
 | 항목 | 값 |
 |------|-----|
-| API Provider | Anthropic |
 | Base URL | `http://localhost:8081/anthropic` |
 | API Key | (아무 값) |
-| Model ID | `claude-sonnet-4-5` 또는 `claude-opus-4-6` |
+| Model ID 예시 | `claude-sonnet-4-6`, `claude-opus-4-6` |
 
-## Claude Code 설정
+### OpenAI 호환 클라이언트
+
+| 항목 | 값 |
+|------|-----|
+| Base URL | `http://localhost:8081/openai` |
+| API Key | (아무 값) |
+| Model ID 예시 | `gpt-5.4`, `gpt-5.4-pro`, `gpt-5.3-codex` |
+
+### 환경변수 설정 예시
 
 `scripts\claude-code.bat` 또는 `scripts\proxy-shell.bat`를 사용하면 환경변수가 자동으로 설정됩니다. 수동 설정 시:
 
@@ -215,11 +232,11 @@ set OPENAI_API_KEY=azure-proxy-key
 
 | 경로 | 설명 |
 |------|------|
-| `/anthropic/*` | Anthropic API 프록시 (인증 변환, beta 필터링, cache_control 제거) |
-| `/v1/messages` | Anthropic Messages API (자동으로 `/anthropic/v1/messages`로 라우팅) |
-| `/openai/*` | Azure OpenAI API 프록시 (인증 주입, 미지원 파라미터 제거) |
-| `/v1/responses` | OpenAI Responses API (자동으로 Chat Completions로 변환, native 모델 제외) |
-| `/v1/chat/completions` | Azure OpenAI Chat API |
+| `/anthropic/*` | Azure AI Foundry Anthropic API 경로 |
+| `/v1/messages` | Anthropic 호환 messages 경로 (자동으로 `/anthropic/v1/messages`로 라우팅) |
+| `/openai/*` | Azure OpenAI 호환 경로 |
+| `/v1/responses` | OpenAI Responses API 경로 (native 모델 제외 시 Chat Completions로 변환) |
+| `/v1/chat/completions` | OpenAI Chat Completions 경로 |
 | `/health` | 헬스 체크 |
 
 ### 모델 기반 라우팅
@@ -248,7 +265,7 @@ scripts\build-exe.bat
 node dist/proxy.mjs
 ```
 
-> **참고**: 번들 실행 시 `config.yaml`과 `.env` 파일이 실행 디렉토리에 있어야 합니다.
+> **참고**: 소스와 번들 모두 ESM 기반이며, 번들 실행 시 `config.yaml`과 `.env` 파일이 실행 디렉토리에 있어야 합니다.
 
 ## 프로젝트 구조
 
@@ -282,7 +299,8 @@ azure-openai-proxy/
 │   ├── setup-budget.ps1    # Azure 비용 예산 설정
 │   ├── apply-emergency-controls.ps1  # 비상 제어 적용
 │   └── stop-costly-resources.ps1     # 비용 많은 리소스 중지
-└── dist/                   # (빌드 후 생성)
+└── dist/
+    └── proxy.mjs           # 빌드 후 생성되는 번들 산출물
 ```
 
 ## 고급 기능

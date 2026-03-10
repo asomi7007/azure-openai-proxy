@@ -4,32 +4,69 @@ import { logRaw, log, logSuccess } from './utils/logger.mjs';
 
 const server = createProxyServer(config);
 const port = config.server.port;
+const BOX_WIDTH = 60;
+const BOX_CONTENT_WIDTH = BOX_WIDTH - 2;
+const BOX_LABEL_WIDTH = 18;
+const ROUTE_PATH_WIDTH = 22;
+
+function boxLine(label, value) {
+  const content = ` ${label.padEnd(BOX_LABEL_WIDTH)} ${value}`;
+  return `  │${content.padEnd(BOX_CONTENT_WIDTH)}│`;
+}
+
+function routeLine(path, description) {
+  return `    ${path.padEnd(ROUTE_PATH_WIDTH)} → ${description}`;
+}
+
+function getProfileModelMappings(config) {
+  const activeProfile = config.activeModelProfile;
+  if (!activeProfile || activeProfile === 'default') return [];
+
+  const baseModelMap = [
+    { label: 'Claude Opus', sourceModel: 'claude-opus-4-6', defaultTarget: 'claude-opus-4-6' },
+    { label: 'Claude Sonnet', sourceModel: 'claude-sonnet-4-6', defaultTarget: 'claude-sonnet-4-6' },
+  ];
+
+  return baseModelMap
+    .map(({ label, sourceModel, defaultTarget }) => {
+      const currentTarget = config.modelNameMap?.[sourceModel] || defaultTarget;
+      return currentTarget !== defaultTarget ? { label, value: `${sourceModel} → ${currentTarget}` } : null;
+    })
+    .filter(Boolean);
+}
 
 server.listen(port, () => {
   logRaw('');
   logRaw('╔══════════════════════════════════════════════════════════════╗');
-  logRaw('║           Azure OpenAI Proxy - Roo Code Edition            ║');
+  logRaw('║                 Azure OpenAI Proxy Server                  ║');
   logRaw('╚══════════════════════════════════════════════════════════════╝');
   logRaw('');
-  logSuccess('SERVER', `Proxy server listening on http://localhost:${port}`);
-  log('SERVER', `Model profile: ${config.activeModelProfile || 'default'}`);
+  logSuccess('SERVER', `Listening on http://localhost:${port}`);
+  log('SERVER', `Active profile: ${config.activeModelProfile || 'default'}`);
   log('SERVER', `Azure endpoint: ${config.azure.baseUrl}`);
-  log('SERVER', `API Key: ${config.azure.apiKey ? '***' + config.azure.apiKey.slice(-4) : '(not set)'}`);
+  log('SERVER', `API key: ${config.azure.apiKey ? '***' + config.azure.apiKey.slice(-4) : '(not set)'}`);
   logRaw('');
+
+  const profileMappings = getProfileModelMappings(config);
+
   logRaw('  Routes:');
-  logRaw('    /anthropic/*       → Azure AI Foundry Claude (Anthropic API)');
-  logRaw('    /v1/messages       → Azure AI Foundry Claude (prefix 자동 보정)');
-  logRaw('    /openai/*          → Azure OpenAI (Codex 등)');
-  logRaw('    /v1/responses      → Azure OpenAI Responses API');
-  logRaw('    /v1/chat/completions → Azure OpenAI Chat API');
-  logRaw('    /health            → Health check');
+  logRaw(routeLine('/anthropic/*', 'Azure AI Foundry Anthropic API'));
+  logRaw(routeLine('/v1/messages', 'Anthropic-compatible messages route'));
+  logRaw(routeLine('/openai/*', 'Azure OpenAI compatible route'));
+  logRaw(routeLine('/v1/responses', 'OpenAI Responses API route'));
+  logRaw(routeLine('/v1/chat/completions', 'OpenAI Chat Completions route'));
+  logRaw(routeLine('/health', 'Health check'));
   logRaw('');
-  logRaw('  Roo Code 설정:');
+
+  logRaw('  Connection info:');
   logRaw('  ┌──────────────────────────────────────────────────────────┐');
-  logRaw(`  │ Claude  Base URL : http://localhost:${port}/anthropic        │`);
-  logRaw(`  │         또는      : http://localhost:${port}                 │`);
-  logRaw(`  │ Codex   Base URL : http://localhost:${port}/openai           │`);
-  logRaw('  │ API Key          : (아무 값)                             │');
+  logRaw(boxLine('Anthropic API', `http://localhost:${port}/anthropic`));
+  logRaw(boxLine('OpenAI API', `http://localhost:${port}/openai`));
+  logRaw(boxLine('API key', 'Any non-empty value'));
+  logRaw(boxLine('Profile', String(config.activeModelProfile || 'default')));
+  for (const mapping of profileMappings) {
+    logRaw(boxLine(mapping.label, mapping.value));
+  }
   logRaw('  └──────────────────────────────────────────────────────────┘');
   logRaw('');
 });
