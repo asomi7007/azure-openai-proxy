@@ -25,12 +25,12 @@ if not exist "dist" mkdir dist
 
 :: Bundle with esbuild
 echo [INFO] Bundling with esbuild...
-npx esbuild src/index.mjs --bundle --platform=node --format=cjs --outfile=dist/proxy.cjs
+npx esbuild src/index.mjs --bundle --platform=node --format=esm --outfile=dist/proxy.mjs
 
 if %ERRORLEVEL% equ 0 (
     echo.
-    echo [SUCCESS] Bundle created: dist/proxy.cjs
-    echo [INFO] Run with: node dist/proxy.cjs
+    echo [SUCCESS] Bundle created: dist/proxy.mjs
+    echo [INFO] Run with: node dist/proxy.mjs
     echo.
 ) else (
     echo.

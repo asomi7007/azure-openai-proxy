@@ -242,10 +242,10 @@ npm run build
 scripts\build-exe.bat
 ```
 
-번들된 파일 실행:
+번들된 ESM 파일 실행:
 
 ```bash
-node dist/proxy.cjs
+node dist/proxy.mjs
 ```
 
 > **참고**: 번들 실행 시 `config.yaml`과 `.env` 파일이 실행 디렉토리에 있어야 합니다.
