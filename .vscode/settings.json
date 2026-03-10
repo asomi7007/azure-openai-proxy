@@ -1,5 +1,9 @@
 {
     "chat.tools.terminal.autoApprove": {
-        "Get-NetNat": true
+        "Get-NetNat": true,
+        "/^Set-Location \"c:\\\\Users\\\\asomi\\\\OneDrive - 엘던솔루션\\\\작업용\\\\azure-openai-proxy\"; node --check src/index\\.mjs$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
     }
 }

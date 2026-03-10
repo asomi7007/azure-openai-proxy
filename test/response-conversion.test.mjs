@@ -48,5 +48,5 @@ test('OpenAI finish_reason maps to Anthropic stop_reason', () => {
   };
 
   const anthropicResp = convertOpenAIToAnthropic(openaiResp);
-  assert.equal(anthropicResp.stop_reason, 'length');
+  assert.equal(anthropicResp.stop_reason, 'max_tokens');
 });

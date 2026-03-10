@@ -93,11 +93,11 @@ unsupportedAnthropicBetas:
 modelProfiles:
   claude-to-gpt:
     modelNameMap:
-      claude-opus-4-6: gpt-3.5-pro
-      claude-sonnet-4-6: gpt-3.5
+      claude-opus-4-6: gpt-5.4-pro
+      claude-sonnet-4-6: gpt-5.4
     openAIModels:
-      - gpt-3.5-pro
-      - gpt-3.5
+      - gpt-5.4-pro
+      - gpt-5.4
 ```
 
 ### .env
