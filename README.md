@@ -88,6 +88,16 @@ unsupportedAnthropicBetas:
   - fine-grained-tool-streaming-2025-05-14
   - output-128k-2025-02-19
   - context-1m-2025-08-07
+
+# 모델 변환 프로필 (환경변수 PROXY_MODEL_PROFILE로 선택)
+modelProfiles:
+  claude-to-gpt:
+    modelNameMap:
+      claude-opus-4-6: gpt-3.5-pro
+      claude-sonnet-4-6: gpt-3.5
+    openAIModels:
+      - gpt-3.5-pro
+      - gpt-3.5
 ```
 
 ### .env
@@ -102,6 +112,7 @@ AZURE_API_KEY=your-api-key-here
 - `AZURE_API_KEY` - Azure API 키
 - `AZURE_BASE_URL` - Azure 엔드포인트 URL
 - `PORT` - 서버 포트
+- `PROXY_MODEL_PROFILE` - 모델 변환 프로필 (`default`, `claude-to-gpt` 등)
 
 ## 실행
 
@@ -133,6 +144,20 @@ scripts\claude-code.bat
 scripts\proxy-shell.bat
 ```
 
+### 방법 4: Claude→GPT 변환 모드 실행
+
+Claude 모델 요청을 GPT 배포로 변환하는 프로필(`claude-to-gpt`)로 실행합니다.
+
+```cmd
+scripts\start-claude-to-gpt.bat
+```
+
+또는 `start.bat`에 프로필명을 직접 지정할 수 있습니다.
+
+```cmd
+scripts\start.bat claude-to-gpt
+```
+
 ### 중지
 
 ```cmd
@@ -150,7 +175,7 @@ scripts\stop.bat
 | `claude-opus-4-6` | claude-opus-4-6 | 최신 Opus |
 | `claude-opus-4-5-20251101` | claude-opus-4-5 | Opus 이전 버전 |
 | `claude-opus-4-5-20250929` | claude-opus-4-6 | Opus로 업그레이드 |
-| `claude-sonnet-4-6` | claude-opus-4-6 | Opus로 업그레이드 |
+| `claude-sonnet-4-6` | claude-sonnet-4-6 | 최신 Sonnet |
 | `claude-sonnet-4-5` | claude-sonnet-4-5 | 최신 Sonnet |
 | `claude-sonnet-4-5-20250929` | claude-sonnet-4-5 | Sonnet 이전 버전 |
 | `claude-sonnet-4-20250514` | claude-sonnet-4-5 | Sonnet 이전 버전 |
@@ -159,6 +184,12 @@ scripts\stop.bat
 | `gpt-5.3-codex` | gpt-5.3-codex | GPT Codex |
 | `gpt-5.4` | gpt-5.4 | GPT |
 | `gpt-5.4-pro` | gpt-5.4-pro | GPT Pro |
+
+### 프로필 기반 매핑 확장
+
+- `config.yaml`의 `modelProfiles`에 새 프로필을 추가하면 하드코딩 없이 매핑 규칙 확장 가능
+- 실행 시 `PROXY_MODEL_PROFILE` 환경변수 또는 `scripts\start.bat <profile>`로 선택
+- 선택된 프로필은 기본 설정 위에 덮어쓰는 방식으로 적용
 
 ## Roo Code 프로필 설정
 
@@ -245,6 +276,7 @@ azure-openai-proxy/
 │   ├── stop.bat            # 프록시 중지
 │   ├── claude-code.bat     # Claude Code 통합 실행
 │   ├── proxy-shell.bat     # 대화형 프록시 셸
+│   ├── start-claude-to-gpt.bat # Claude→GPT 변환 프로필 시작
 │   ├── build-exe.bat       # 번들 빌드
 │   ├── create-azure-credentials.ps1  # Azure 자격증명 생성
 │   ├── setup-budget.ps1    # Azure 비용 예산 설정

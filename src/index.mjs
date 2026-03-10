@@ -12,6 +12,7 @@ server.listen(port, () => {
   logRaw('╚══════════════════════════════════════════════════════════════╝');
   logRaw('');
   logSuccess('SERVER', `Proxy server listening on http://localhost:${port}`);
+  log('SERVER', `Model profile: ${config.activeModelProfile || 'default'}`);
   log('SERVER', `Azure endpoint: ${config.azure.baseUrl}`);
   log('SERVER', `API Key: ${config.azure.apiKey ? '***' + config.azure.apiKey.slice(-4) : '(not set)'}`);
   logRaw('');

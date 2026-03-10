@@ -50,3 +50,17 @@ unsupportedAnthropicBetas:
   - fine-grained-tool-streaming-2025-05-14
   - output-128k-2025-02-19
   - context-1m-2025-08-07
+
+# 모델 변환 프로필 (환경변수 PROXY_MODEL_PROFILE로 선택)
+# - default: 기존 동작
+# - claude-to-gpt: Claude 모델 요청을 GPT 배포로 변환
+modelProfiles:
+  claude-to-gpt:
+    modelNameMap:
+      # 요청이 Claude여도 Azure OpenAI GPT 배포로 강제 매핑
+      claude-opus-4-6: gpt-3.5-pro
+      claude-sonnet-4-6: gpt-3.5
+    # Anthropic 형식 요청이 이 리스트 모델로 해석되면 OpenAI 라우트로 자동 변환
+    openAIModels:
+      - gpt-3.5-pro
+      - gpt-3.5

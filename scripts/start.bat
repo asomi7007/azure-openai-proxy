@@ -6,6 +6,9 @@ chcp 65001 >nul 2>&1
 title Azure OpenAI Proxy
 set "SCRIPT_DIR=%~dp0"
 set "PROJECT_DIR=%SCRIPT_DIR%.."
+set "PROFILE=%~1"
+if "%PROFILE%"=="" set "PROFILE=default"
+set "PROXY_MODEL_PROFILE=%PROFILE%"
 
 cd /d "%PROJECT_DIR%"
 
@@ -13,6 +16,7 @@ echo.
 echo ========================================
 echo   Azure OpenAI Proxy - Starting...
 echo ========================================
+echo   Model Profile: %PROXY_MODEL_PROFILE%
 echo.
 
 :: Check if node is available

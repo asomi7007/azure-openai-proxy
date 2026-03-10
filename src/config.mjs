@@ -8,6 +8,43 @@ const __dirname = dirname(__filename);
 const PROJECT_ROOT = resolve(__dirname, '..');
 
 /**
+ * Merge list values with de-duplication while preserving order
+ * @param {any[]} base
+ * @param {any[]} extra
+ * @returns {any[]}
+ */
+function mergeUniqueList(base, extra) {
+  const out = [];
+  for (const item of [...(Array.isArray(base) ? base : []), ...(Array.isArray(extra) ? extra : [])]) {
+    if (!out.includes(item)) out.push(item);
+  }
+  return out;
+}
+
+/**
+ * Merge base config with selected model profile
+ * @param {object} base
+ * @param {object|undefined} profile
+ * @returns {object}
+ */
+function applyModelProfile(base, profile) {
+  if (!profile || typeof profile !== 'object') return base;
+
+  return {
+    ...base,
+    modelNameMap: {
+      ...(base.modelNameMap || {}),
+      ...(profile.modelNameMap || {}),
+    },
+    openAIModels: mergeUniqueList(base.openAIModels, profile.openAIModels),
+    nativeResponsesModels: mergeUniqueList(base.nativeResponsesModels, profile.nativeResponsesModels),
+    completionsModels: mergeUniqueList(base.completionsModels, profile.completionsModels),
+    unsupportedParams: mergeUniqueList(base.unsupportedParams, profile.unsupportedParams),
+    unsupportedAnthropicBetas: mergeUniqueList(base.unsupportedAnthropicBetas, profile.unsupportedAnthropicBetas),
+  };
+}
+
+/**
  * Parse .env file and merge into process.env
  * @param {string} envPath - Path to .env file
  */
@@ -62,8 +99,8 @@ function loadConfig() {
     }
   }
 
-  // Build final config with env overrides
-  const config = {
+  // Base config with env overrides
+  const baseConfig = {
     server: {
       port: parseInt(process.env.PORT, 10) || fileConfig?.server?.port || 8081,
     },
@@ -81,6 +118,17 @@ function loadConfig() {
     completionsModels: fileConfig?.completionsModels || [],
     unsupportedAnthropicBetas: fileConfig?.unsupportedAnthropicBetas || [],
   };
+
+  const profileName = process.env.PROXY_MODEL_PROFILE || fileConfig?.activeModelProfile || 'default';
+  const profile = fileConfig?.modelProfiles?.[profileName];
+
+  if (profileName !== 'default' && !profile) {
+    console.warn(`Warning: model profile '${profileName}' not found. Falling back to base config.`);
+  }
+
+  // Apply selected profile on top of base config
+  const config = applyModelProfile(baseConfig, profile);
+  config.activeModelProfile = profileName;
 
   return config;
 }
