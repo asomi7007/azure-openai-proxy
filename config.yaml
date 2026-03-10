@@ -58,9 +58,9 @@ modelProfiles:
   claude-to-gpt:
     modelNameMap:
       # 요청이 Claude여도 Azure OpenAI GPT 배포로 강제 매핑
-      claude-opus-4-6: gpt-3.5-pro
-      claude-sonnet-4-6: gpt-3.5
+      claude-opus-4-6: gpt-5.4-pro
+      claude-sonnet-4-6: gpt-5.4
     # Anthropic 형식 요청이 이 리스트 모델로 해석되면 OpenAI 라우트로 자동 변환
     openAIModels:
-      - gpt-3.5-pro
-      - gpt-3.5
+      - gpt-5.4-pro
+      - gpt-5.4
