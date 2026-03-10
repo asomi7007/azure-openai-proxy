@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "additionalDirectories": [
+      "C:\\Users\\asomi\\.claude\\projects\\c--Users-asomi-OneDrive-------------azure-openai-proxy"
+    ],
+    "allow": [
+      "WebFetch(domain:go.microsoft.com)"
+    ]
+  }
+}

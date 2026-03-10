@@ -1,0 +1,26 @@
+{
+  "name": "azure-openai-proxy",
+  "version": "1.0.0",
+  "description": "Azure AI Foundry Proxy for Roo Code - OpenAI/Anthropic compatible",
+  "type": "module",
+  "main": "src/index.mjs",
+  "scripts": {
+    "start": "node src/index.mjs",
+    "build:bundle": "esbuild src/index.mjs --bundle --platform=node --format=cjs --outfile=dist/proxy.cjs",
+    "build": "npm run build:bundle"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  },
+  "keywords": [
+    "azure",
+    "openai",
+    "anthropic",
+    "proxy",
+    "roo-code"
+  ],
+  "license": "MIT"
+}
