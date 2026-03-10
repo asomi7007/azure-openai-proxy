@@ -150,6 +150,14 @@ export function transformBody(body, isAnthropicRoute, config) {
     if (body.messages) {
       body.messages = sanitizeMessages(body.messages);
     }
+  } else {
+    // OpenAI 라우트: max_tokens → max_completion_tokens 변환
+    // Azure OpenAI API는 max_tokens 대신 max_completion_tokens 사용
+    if (body.max_tokens != null && body.max_completion_tokens == null) {
+      body.max_completion_tokens = body.max_tokens;
+      delete body.max_tokens;
+      log('PROXY', `Converted max_tokens → max_completion_tokens: ${body.max_completion_tokens}`);
+    }
   }
 
   const isStreaming = !!body.stream;
