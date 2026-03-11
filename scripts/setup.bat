@@ -54,31 +54,68 @@ echo [INFO] Node.js 확인 완료.
 
 if not exist ".env" (
     > .env echo AZURE_API_KEY=
+    >> .env echo AZURE_BASE_URL=
+    >> .env echo AZURE_OPENAI_BASE_URL=
+    >> .env echo PORT=8081
+    >> .env echo PROXY_MODEL_PROFILE=default
     >> .env echo PROXY_DEFAULT_PROFILE=default
 )
 
 set "EXISTING_API_KEY="
 for /f "usebackq delims=" %%A in (`powershell -NoProfile -Command "$line = Get-Content '.env' | Where-Object { $_ -match '^AZURE_API_KEY=' } | Select-Object -Last 1; if ($line) { $line.Substring(14) }"`) do set "EXISTING_API_KEY=%%A"
+set "EXISTING_AZURE_BASE_URL="
+for /f "usebackq delims=" %%A in (`powershell -NoProfile -Command "$line = Get-Content '.env' | Where-Object { $_ -match '^AZURE_BASE_URL=' } | Select-Object -Last 1; if ($line) { $line.Substring(15) }"`) do set "EXISTING_AZURE_BASE_URL=%%A"
+set "EXISTING_AZURE_OPENAI_BASE_URL="
+for /f "usebackq delims=" %%A in (`powershell -NoProfile -Command "$line = Get-Content '.env' | Where-Object { $_ -match '^AZURE_OPENAI_BASE_URL=' } | Select-Object -Last 1; if ($line) { $line.Substring(22) }"`) do set "EXISTING_AZURE_OPENAI_BASE_URL=%%A"
+set "EXISTING_PORT="
+for /f "usebackq delims=" %%A in (`powershell -NoProfile -Command "$line = Get-Content '.env' | Where-Object { $_ -match '^PORT=' } | Select-Object -Last 1; if ($line) { $line.Substring(5) }"`) do set "EXISTING_PORT=%%A"
+set "EXISTING_PROXY_MODEL_PROFILE="
+for /f "usebackq delims=" %%A in (`powershell -NoProfile -Command "$line = Get-Content '.env' | Where-Object { $_ -match '^PROXY_MODEL_PROFILE=' } | Select-Object -Last 1; if ($line) { $line.Substring(20) }"`) do set "EXISTING_PROXY_MODEL_PROFILE=%%A"
 
 set "MASKED_API_KEY=(none)"
 if not "!EXISTING_API_KEY!"=="" (
     for /f "usebackq delims=" %%A in (`powershell -NoProfile -Command "$v=$env:EXISTING_API_KEY; if([string]::IsNullOrWhiteSpace($v)){ '(none)' } elseif($v.Length -le 8) { ('*' * $v.Length) } else { $v.Substring(0,4) + ('*' * ($v.Length-8)) + $v.Substring($v.Length-4) }"`) do set "MASKED_API_KEY=%%A"
 )
 
+if "!EXISTING_AZURE_BASE_URL!"=="" set "EXISTING_AZURE_BASE_URL=https://your-resource.services.ai.azure.com"
+if "!EXISTING_AZURE_OPENAI_BASE_URL!"=="" set "EXISTING_AZURE_OPENAI_BASE_URL=https://your-resource.openai.azure.com"
+if "!EXISTING_PORT!"=="" set "EXISTING_PORT=8081"
+if "!EXISTING_PROXY_MODEL_PROFILE!"=="" set "EXISTING_PROXY_MODEL_PROFILE=default"
+
 echo [INFO] 현재 AZURE_API_KEY: !MASKED_API_KEY!
 set /p "INPUT_API_KEY=새 API 키 입력 (Enter=기존값 유지): "
 set "FINAL_API_KEY=!EXISTING_API_KEY!"
 if not "!INPUT_API_KEY!"=="" set "FINAL_API_KEY=!INPUT_API_KEY!"
-
 if "!FINAL_API_KEY!"=="" (
     echo [WARN] API 키가 비어 있습니다. 나중에 .env에서 설정하세요.
 )
 
 echo.
-echo 기본 시작 모드를 선택하세요:
+echo [INFO] Azure AI Foundry Base URL 예시: https://your-resource.services.ai.azure.com
+echo [INFO] 현재 AZURE_BASE_URL: !EXISTING_AZURE_BASE_URL!
+set /p "INPUT_AZURE_BASE_URL=새 Azure AI Foundry Base URL 입력 (Enter=기존값 유지): "
+set "FINAL_AZURE_BASE_URL=!EXISTING_AZURE_BASE_URL!"
+if not "!INPUT_AZURE_BASE_URL!"=="" set "FINAL_AZURE_BASE_URL=!INPUT_AZURE_BASE_URL!"
+
+echo.
+echo [INFO] Azure OpenAI Base URL 예시: https://your-resource.openai.azure.com
+echo [INFO] 현재 AZURE_OPENAI_BASE_URL: !EXISTING_AZURE_OPENAI_BASE_URL!
+set /p "INPUT_AZURE_OPENAI_BASE_URL=새 Azure OpenAI Base URL 입력 (Enter=기존값 유지): "
+set "FINAL_AZURE_OPENAI_BASE_URL=!EXISTING_AZURE_OPENAI_BASE_URL!"
+if not "!INPUT_AZURE_OPENAI_BASE_URL!"=="" set "FINAL_AZURE_OPENAI_BASE_URL=!INPUT_AZURE_OPENAI_BASE_URL!"
+
+echo.
+echo [INFO] 현재 PORT: !EXISTING_PORT!
+set /p "INPUT_PORT=프록시 포트 입력 (Enter=기존값 유지): "
+set "FINAL_PORT=!EXISTING_PORT!"
+if not "!INPUT_PORT!"=="" set "FINAL_PORT=!INPUT_PORT!"
+
+echo.
+echo 활성 모델 프로필을 선택하세요:
 echo   [1] default
 echo   [2] claude-to-gpt
 echo   [3] model-router
+echo [INFO] 현재 PROXY_MODEL_PROFILE: !EXISTING_PROXY_MODEL_PROFILE!
 set /p "MODE_CHOICE=선택 (기본 1): "
 if "!MODE_CHOICE!"=="" set "MODE_CHOICE=1"
 
@@ -87,6 +124,10 @@ if "!MODE_CHOICE!"=="2" set "DEFAULT_PROFILE=claude-to-gpt"
 if "!MODE_CHOICE!"=="3" set "DEFAULT_PROFILE=model-router"
 
 set "NEW_AZURE_API_KEY=!FINAL_API_KEY!"
+set "NEW_AZURE_BASE_URL=!FINAL_AZURE_BASE_URL!"
+set "NEW_AZURE_OPENAI_BASE_URL=!FINAL_AZURE_OPENAI_BASE_URL!"
+set "NEW_PORT=!FINAL_PORT!"
+set "NEW_PROXY_MODEL_PROFILE=!DEFAULT_PROFILE!"
 set "NEW_PROXY_DEFAULT_PROFILE=!DEFAULT_PROFILE!"
 
 powershell -NoProfile -Command ^
@@ -97,6 +138,10 @@ powershell -NoProfile -Command ^
 "  $script:lines += ($prefix + $value);" ^
 "};" ^
 "Set-Key 'AZURE_API_KEY' $env:NEW_AZURE_API_KEY;" ^
+"Set-Key 'AZURE_BASE_URL' $env:NEW_AZURE_BASE_URL;" ^
+"Set-Key 'AZURE_OPENAI_BASE_URL' $env:NEW_AZURE_OPENAI_BASE_URL;" ^
+"Set-Key 'PORT' $env:NEW_PORT;" ^
+"Set-Key 'PROXY_MODEL_PROFILE' $env:NEW_PROXY_MODEL_PROFILE;" ^
 "Set-Key 'PROXY_DEFAULT_PROFILE' $env:NEW_PROXY_DEFAULT_PROFILE;" ^
 "Set-Content -Path $p -Value $lines -Encoding UTF8"
 
@@ -118,7 +163,10 @@ if not exist "node_modules" (
 
 echo.
 echo [SUCCESS] Setup 완료
-echo [INFO] 기본 프로필: !DEFAULT_PROFILE!
+echo [INFO] Azure AI Foundry Base URL: !FINAL_AZURE_BASE_URL!
+echo [INFO] Azure OpenAI Base URL: !FINAL_AZURE_OPENAI_BASE_URL!
+echo [INFO] 포트: !FINAL_PORT!
+echo [INFO] 활성 프로필: !DEFAULT_PROFILE!
 echo [INFO] 실행: scripts\start.bat
 echo.
 pause

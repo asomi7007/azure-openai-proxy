@@ -81,10 +81,19 @@ scripts\setup.bat
 - Node.js LTS 확인 및 (선택적) 자동 설치
 - `.env` 생성 또는 업데이트
 - `AZURE_API_KEY` 입력
-- **기본 시작 모드 선택** (`default`, `claude-to-gpt`, `model-router`)
+- Azure AI Foundry URL 예시를 보여주고 `AZURE_BASE_URL` 입력
+- Azure OpenAI URL 예시를 보여주고 `AZURE_OPENAI_BASE_URL` 입력
+- `PORT` 입력
+- 활성 시작 모드 선택 (`default`, `claude-to-gpt`, `model-router`)
 - 의존성 자동 설치
 
-선택한 모드는 `.env`의 `PROXY_DEFAULT_PROFILE`로 저장됩니다.
+입력한 값은 `.env`에 아래 항목으로 저장됩니다:
+- `AZURE_API_KEY`
+- `AZURE_BASE_URL`
+- `AZURE_OPENAI_BASE_URL`
+- `PORT`
+- `PROXY_MODEL_PROFILE`
+- `PROXY_DEFAULT_PROFILE`
 
 ### 최소 설정
 
