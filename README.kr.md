@@ -1,6 +1,8 @@
 # Azure OpenAI Proxy
 
-[English](./README.md) | 한국어
+한국어 | [English](./README.en.md)
+
+![Azure OpenAI Proxy Korean Hero](./hero-ko.png)
 
 OpenAI/Anthropic 호환 클라이언트를 Azure AI Foundry와 Azure OpenAI 뒤로 연결하는 Azure 중심 호환 프록시입니다.
 
