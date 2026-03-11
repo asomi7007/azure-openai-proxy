@@ -62,6 +62,23 @@ This project is a compatibility proxy for teams using Azure AI Foundry and Azure
 npm install
 ```
 
+### Optional: One-time setup (Windows)
+
+For first-time users on Windows, you can run the interactive setup script.
+
+```cmd
+scripts\setup.bat
+```
+
+This will:
+- Check (and optionally install) Node.js LTS
+- Create or update `.env`
+- Prompt for `AZURE_API_KEY`
+- Let you choose a **default startup mode** (`default`, `claude-to-gpt`, `model-router`)
+- Install dependencies if needed
+
+The selected mode is stored as `PROXY_DEFAULT_PROFILE` in `.env`.
+
 ### Minimal configuration
 
 `config.yaml`
@@ -84,6 +101,9 @@ AZURE_API_KEY=your-api-key-here
 ```
 
 ### Start by mode
+
+> **Note**
+> If `PROXY_DEFAULT_PROFILE` is set in `.env` (for example by `scripts\\setup.bat`), running `start.bat` or `start.sh` without arguments will use that profile by default.
 
 #### Windows
 
@@ -352,7 +372,7 @@ PROXY_MODEL_PROFILE=model-router npm start
 
 ### Recommended entry points: `start.bat <mode>` / `start.sh <mode>`
 
-Using one launcher with a mode argument is the clearest way to operate the proxy.
+Using one launcher with a mode argument is the clearest way to operate the proxy. If you already ran `scripts\setup.bat` on Windows, you can also omit the argument and use the saved default mode.
 
 #### Windows
 
