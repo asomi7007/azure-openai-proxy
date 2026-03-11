@@ -71,22 +71,50 @@ This project is a compatibility proxy for teams using Azure AI Foundry and Azure
 npm install
 ```
 
-### Optional: One-time setup (Windows)
+### Optional: One-time setup
 
-For first-time users on Windows, you can run the interactive setup script.
+If you want an easier first-run experience, use the interactive setup script.
+
+Windows:
 
 ```cmd
 scripts\setup.bat
 ```
 
+macOS / Linux:
+
+```bash
+./scripts/setup.sh
+```
+
 This will:
-- Check (and optionally install) Node.js LTS
+- Check Node.js and the local environment
 - Create or update `.env`
 - Prompt for `AZURE_API_KEY`
-- Let you choose a **default startup mode** (`default`, `claude-to-gpt`, `model-router`)
+- Show an Azure AI Foundry endpoint example and prompt for `AZURE_BASE_URL`
+- Show an Azure OpenAI endpoint example and prompt for `AZURE_OPENAI_BASE_URL`
+- Prompt for `PORT`
+- Let you choose the active startup mode (`default`, `claude-to-gpt`, `model-router`)
+- Validate URL format, port range, and port availability
+- Show connectivity feedback for the entered URLs and API key
 - Install dependencies if needed
 
-The selected mode is stored as `PROXY_DEFAULT_PROFILE` in `.env`.
+The entered values are stored in `.env` as:
+- `AZURE_API_KEY`
+- `AZURE_BASE_URL`
+- `AZURE_OPENAI_BASE_URL`
+- `PORT`
+- `PROXY_MODEL_PROFILE`
+- `PROXY_DEFAULT_PROFILE`
+
+### What these values mean
+
+- `AZURE_API_KEY`: the real Azure API key used when the proxy calls Azure AI Foundry or Azure OpenAI
+- `AZURE_BASE_URL`: the Azure AI Foundry endpoint, for example `https://your-resource.services.ai.azure.com`
+- `AZURE_OPENAI_BASE_URL`: the Azure OpenAI endpoint, for example `https://your-resource.openai.azure.com`
+- `PORT`: the local port opened by this proxy, for example `8081`
+
+In practice, you normally copy these values from the Azure portal after the target model or deployment has already been created.
 
 ### Minimal configuration
 
@@ -116,19 +144,19 @@ AZURE_API_KEY=your-api-key-here
 
 #### Windows
 
-Default mode:
+Default mode: the standard compatibility proxy mode that uses the prepared default Azure model mappings
 
 ```cmd
 scripts\start.bat
 ```
 
-Claude → GPT mode:
+Claude → GPT mode: converts Claude-style requests and reroutes them to Azure GPT deployments
 
 ```cmd
 scripts\start.bat claude-to-gpt
 ```
 
-Model-router mode:
+Model-router mode: sends Claude-style requests to Azure `model-router` and lets Azure choose the final model
 
 ```cmd
 scripts\start.bat model-router
@@ -136,19 +164,19 @@ scripts\start.bat model-router
 
 #### macOS / Linux
 
-Default mode:
+Default mode: the standard compatibility proxy mode that uses the prepared default Azure model mappings
 
 ```bash
 ./scripts/start.sh
 ```
 
-Claude → GPT mode:
+Claude → GPT mode: converts Claude-style requests and reroutes them to Azure GPT deployments
 
 ```bash
 ./scripts/start.sh claude-to-gpt
 ```
 
-Model-router mode:
+Model-router mode: sends Claude-style requests to Azure `model-router` and lets Azure choose the final model
 
 ```bash
 ./scripts/start.sh model-router

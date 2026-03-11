@@ -73,21 +73,29 @@
 npm install
 ```
 
-### (선택) 초기 설정 스크립트 (Windows)
+### (선택) 초기 설정 스크립트
 
-Windows 첫 실행이라면 대화형 setup 스크립트를 사용할 수 있습니다.
+처음 설정을 더 쉽게 하고 싶다면 대화형 setup 스크립트를 사용할 수 있습니다.
+
+Windows:
 
 ```cmd
 scripts\setup.bat
 ```
 
+macOS / Linux:
+
+```bash
+./scripts/setup.sh
+```
+
 이 스크립트는 다음을 수행합니다:
-- Node.js LTS 확인 및 (선택적) 자동 설치
+- Node.js 확인 및 환경 점검
 - `.env` 생성 또는 업데이트
 - `AZURE_API_KEY` 입력
-- Azure AI Foundry URL 예시를 보여주고 `AZURE_BASE_URL` 입력
-- Azure OpenAI URL 예시를 보여주고 `AZURE_OPENAI_BASE_URL` 입력
-- `PORT` 입력
+- Azure AI Foundry endpoint 예시를 보여주고 `AZURE_BASE_URL` 입력
+- Azure OpenAI endpoint 예시를 보여주고 `AZURE_OPENAI_BASE_URL` 입력
+- 프록시가 사용할 `PORT` 입력
 - 활성 시작 모드 선택 (`default`, `claude-to-gpt`, `model-router`)
 - URL 형식, 포트 범위, 포트 사용 중 여부, Windows 예약 포트 범위 검증
 - 입력한 URL과 API 키 기준으로 연결 확인 결과 표시
@@ -100,6 +108,15 @@ scripts\setup.bat
 - `PORT`
 - `PROXY_MODEL_PROFILE`
 - `PROXY_DEFAULT_PROFILE`
+
+### 입력값이 의미하는 것
+
+- `AZURE_API_KEY`: Azure AI Foundry / Azure OpenAI 호출에 사용할 실제 Azure API key입니다.
+- `AZURE_BASE_URL`: Azure AI Foundry endpoint입니다. 예: `https://your-resource.services.ai.azure.com`
+- `AZURE_OPENAI_BASE_URL`: Azure OpenAI endpoint입니다. 예: `https://your-resource.openai.azure.com`
+- `PORT`: 이 프록시가 로컬에서 열 포트입니다. 예: `8081`
+
+이 값들은 보통 Azure 포털에서 이미 만들어 둔 모델/배포와 endpoint 정보를 기준으로 입력합니다.
 
 ### 최소 설정
 
@@ -129,19 +146,19 @@ AZURE_API_KEY=your-api-key-here
 
 #### Windows
 
-기본 모드:
+기본 모드: Azure에 준비된 기본 매핑을 그대로 사용하는 일반 호환 프록시 모드
 
 ```cmd
 scripts\start.bat
 ```
 
-Claude → GPT 모드:
+Claude → GPT 모드: Claude 스타일 요청을 Azure GPT 배포로 변환/재라우팅하는 모드
 
 ```cmd
 scripts\start.bat claude-to-gpt
 ```
 
-Model-router 모드:
+Model-router 모드: Claude 스타일 요청을 Azure `model-router` 배포로 보내 최종 모델 선택을 Azure에 맡기는 모드
 
 ```cmd
 scripts\start.bat model-router
@@ -149,19 +166,19 @@ scripts\start.bat model-router
 
 #### macOS / Linux
 
-기본 모드:
+기본 모드: Azure에 준비된 기본 매핑을 그대로 사용하는 일반 호환 프록시 모드
 
 ```bash
 ./scripts/start.sh
 ```
 
-Claude → GPT 모드:
+Claude → GPT 모드: Claude 스타일 요청을 Azure GPT 배포로 변환/재라우팅하는 모드
 
 ```bash
 ./scripts/start.sh claude-to-gpt
 ```
 
-Model-router 모드:
+Model-router 모드: Claude 스타일 요청을 Azure `model-router` 배포로 보내 최종 모델 선택을 Azure에 맡기는 모드
 
 ```bash
 ./scripts/start.sh model-router
