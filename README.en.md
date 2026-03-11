@@ -4,11 +4,11 @@
 
 ![Azure OpenAI Proxy English Hero](./hero-en.png)
 
-An Azure-first compatibility proxy that places OpenAI-compatible and Anthropic-compatible clients behind Azure AI Foundry and Azure OpenAI.
+**When the target models or deployments already exist in Azure AI Foundry or Azure OpenAI**, this project lets you keep existing OpenAI-compatible or Anthropic-compatible clients while switching the actual backend to Azure-hosted models.
 
 - Centralize model access through Azure
-- Keep existing OpenAI- and Anthropic-style clients
-- Support profile-based rerouting such as `claude-to-gpt` and `model-router`
+- Keep existing OpenAI- and Anthropic-style clients while switching the real backend to Azure deployments
+- Use Claude models through Azure AI Foundry, or send Claude-style requests to Azure GPT or `model-router` deployments
 - Include Responses API bridging, SSE conversion, 429 retry handling, and model mapping
 
 ## Quick Links
@@ -36,7 +36,10 @@ This project is a compatibility proxy for teams using Azure AI Foundry and Azure
 
 > **Key requirement**
 >
-> This proxy only works with clients or services that allow a **custom base URL**. It fits tools such as Claude Code, Roo Code, internal services, and custom SDK-based applications where the endpoint can be overridden.
+> 1. **The target model or deployment must already exist in Azure AI Foundry or Azure OpenAI.**
+> 2. This proxy only works with clients or services that allow a **custom base URL**.
+>
+> In other words, it is a good fit when Azure-side deployments are already prepared and your client can override the endpoint, such as Claude Code, Roo Code, internal services, or custom SDK-based tools.
 
 ## When to use this
 
@@ -56,7 +59,8 @@ This project is a compatibility proxy for teams using Azure AI Foundry and Azure
 ### Prerequisites
 
 - **Node.js is required on Windows, macOS, and Linux**
-- An Azure AI Foundry or Azure OpenAI endpoint
+- **A target model or deployment that already exists in Azure AI Foundry or Azure OpenAI**
+- The corresponding Azure endpoint
 - An Azure API key stored in `.env`
 - A client or service that supports custom base URLs
 - A POSIX shell (`bash`, `zsh`, etc.) if you want to use the `.sh` helper scripts on macOS or Linux
