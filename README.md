@@ -563,6 +563,61 @@ set OPENAI_BASE_URL=http://localhost:8081/openai
 set OPENAI_API_KEY=azure-proxy-key
 ```
 
+### Claude Code setup example
+
+If you want Claude Code to use the Anthropic-compatible side of the proxy, set it like this before launching `claude`:
+
+```bash
+export ANTHROPIC_BASE_URL=http://localhost:8081
+export ANTHROPIC_API_KEY=azure-proxy-key
+claude
+```
+
+Windows Command Prompt:
+
+```cmd
+set ANTHROPIC_BASE_URL=http://localhost:8081
+set ANTHROPIC_API_KEY=azure-proxy-key
+claude
+```
+
+Or use the helper launcher on Windows:
+
+```cmd
+scripts\claude-code.bat
+```
+
+### Roo Code setup example
+
+#### Roo Code with Anthropic provider
+
+Use this when you want Roo Code to send Claude-style requests through the proxy.
+
+| Field | Value |
+|------|-----|
+| Provider | Anthropic |
+| Base URL | `http://localhost:8081/anthropic` |
+| API Key | any non-empty value |
+| Model examples | `claude-sonnet-4-6`, `claude-opus-4-6` |
+
+#### Roo Code with OpenAI provider
+
+Use this when you want Roo Code to send OpenAI-style requests through the proxy.
+
+| Field | Value |
+|------|-----|
+| Provider | OpenAI |
+| Base URL | `http://localhost:8081/openai` |
+| API Key | any non-empty value |
+| Model examples | `gpt-5.4`, `gpt-5.4-pro`, `gpt-5.3-codex` |
+
+### Client setup notes
+
+- For Claude Code, the root `ANTHROPIC_BASE_URL=http://localhost:8081` works because the proxy normalizes `/v1/messages`
+- For Anthropic-compatible UI tools such as Roo Code, using `http://localhost:8081/anthropic` is usually the clearest option
+- For OpenAI-compatible clients, use `http://localhost:8081/openai`
+- The proxy accepts any non-empty client API key and handles the real Azure credential upstream
+
 ## 라우팅 및 변환 규칙
 
 | 경로 | 설명 |

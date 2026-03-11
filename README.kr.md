@@ -563,6 +563,61 @@ set OPENAI_BASE_URL=http://localhost:8081/openai
 set OPENAI_API_KEY=azure-proxy-key
 ```
 
+### Claude Code 설정 예시
+
+Claude Code를 프록시의 Anthropic 호환 경로에 연결하려면 `claude` 실행 전에 아래처럼 설정할 수 있습니다.
+
+```bash
+export ANTHROPIC_BASE_URL=http://localhost:8081
+export ANTHROPIC_API_KEY=azure-proxy-key
+claude
+```
+
+Windows Command Prompt:
+
+```cmd
+set ANTHROPIC_BASE_URL=http://localhost:8081
+set ANTHROPIC_API_KEY=azure-proxy-key
+claude
+```
+
+또는 Windows에서는 helper launcher를 바로 사용할 수 있습니다.
+
+```cmd
+scripts\claude-code.bat
+```
+
+### Roo Code 설정 예시
+
+#### Anthropic provider로 연결
+
+Roo Code에서 Claude 스타일 요청을 프록시로 보내고 싶을 때 사용합니다.
+
+| 항목 | 값 |
+|------|-----|
+| Provider | Anthropic |
+| Base URL | `http://localhost:8081/anthropic` |
+| API Key | any non-empty value |
+| Model examples | `claude-sonnet-4-6`, `claude-opus-4-6` |
+
+#### OpenAI provider로 연결
+
+Roo Code에서 OpenAI 스타일 요청을 프록시로 보내고 싶을 때 사용합니다.
+
+| 항목 | 값 |
+|------|-----|
+| Provider | OpenAI |
+| Base URL | `http://localhost:8081/openai` |
+| API Key | any non-empty value |
+| Model examples | `gpt-5.4`, `gpt-5.4-pro`, `gpt-5.3-codex` |
+
+### 클라이언트 설정 메모
+
+- Claude Code는 `ANTHROPIC_BASE_URL=http://localhost:8081` 루트 경로를 사용해도 `/v1/messages`가 프록시에서 자동 정규화됩니다.
+- Roo Code 같은 Anthropic 호환 UI 도구는 `http://localhost:8081/anthropic`를 넣는 편이 가장 명확합니다.
+- OpenAI 호환 클라이언트는 `http://localhost:8081/openai`를 사용하면 됩니다.
+- 클라이언트 쪽 API key는 아무 non-empty 값이면 되고, 실제 Azure credential은 프록시가 upstream에서 처리합니다.
+
 ## 라우팅 및 변환 규칙
 
 | 경로 | 설명 |
