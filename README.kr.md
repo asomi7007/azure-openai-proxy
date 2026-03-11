@@ -85,6 +85,8 @@ scripts\setup.bat
 - Azure OpenAI URL 예시를 보여주고 `AZURE_OPENAI_BASE_URL` 입력
 - `PORT` 입력
 - 활성 시작 모드 선택 (`default`, `claude-to-gpt`, `model-router`)
+- URL 형식, 포트 범위, 포트 사용 중 여부, Windows 예약 포트 범위 검증
+- 입력한 URL과 API 키 기준으로 연결 확인 결과 표시
 - 의존성 자동 설치
 
 입력한 값은 `.env`에 아래 항목으로 저장됩니다:
