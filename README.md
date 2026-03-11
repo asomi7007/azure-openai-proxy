@@ -14,11 +14,14 @@ An Azure-first compatibility proxy that places OpenAI-compatible and Anthropic-c
 - [Overview](#overview)
 - [When to use this](#when-to-use-this)
 - [Quick Start](#quick-start)
+- [Usage Flow](#usage-flow)
 - [Supported Scenarios](#supported-scenarios)
 - [Architecture](#architecture)
 - [Configuration](#configuration)
 - [Model Profiles](#model-profiles)
+- [Mode and Scenario Matrix](#mode-and-scenario-matrix)
 - [Running](#running)
+- [Operating Tips](#operating-tips)
 - [Client Connection Examples](#client-connection-examples)
 - [Routing and Compatibility Rules](#routing-and-compatibility-rules)
 - [Verification](#verification)
@@ -156,6 +159,30 @@ Expected response:
 ```json
 {"status":"ok","proxy":"azure-openai-proxy"}
 ```
+
+## Usage Flow
+
+### Windows first run
+
+1. Run `scripts\setup.bat`
+2. Enter or keep `AZURE_API_KEY`
+3. Choose the default mode to save as `PROXY_DEFAULT_PROFILE`
+4. Start the proxy with `scripts\start.bat`
+5. Point your client to `http://localhost:8081/anthropic` or `http://localhost:8081/openai`
+6. Verify with `/health` and one real request
+
+### Windows repeat run
+
+1. Run `scripts\start.bat`
+2. Or override the saved default with `scripts\start.bat claude-to-gpt` or `scripts\start.bat model-router`
+3. Stop with `Ctrl+C` or `scripts\stop.bat`
+
+### macOS / Linux run
+
+1. Set `AZURE_API_KEY` in `.env` or the shell environment
+2. Start with `./scripts/start.sh <mode>`
+3. Point your client to the local proxy endpoints
+4. Verify with `/health` and one real request
 
 ## Supported Scenarios
 
@@ -360,6 +387,14 @@ PROXY_MODEL_PROFILE=model-router npm start
 ./scripts/start-model-router.sh
 ```
 
+## Mode and Scenario Matrix
+
+| Mode | Best for | Client pattern | Result |
+|------|------|------|------|
+| `default` | Standard Azure passthrough | OpenAI-compatible and Anthropic-compatible clients already aligned to Azure deployments | Keeps the original protocol and forwards to Azure-compatible targets |
+| `claude-to-gpt` | Claude-style clients that should use GPT deployments | Anthropic-compatible clients such as Claude Code, Roo Code, or internal tools | Converts Claude-style requests into Azure OpenAI Chat Completions |
+| `model-router` | Claude-style clients that should let Azure choose the best model | Anthropic-compatible clients with variable workload patterns | Sends requests to Azure `model-router` and delegates final model choice to Azure |
+
 ## Running
 
 ### Available modes
@@ -463,6 +498,31 @@ scripts\stop.bat
 ```
 
 Or press `Ctrl+C` in the running terminal.
+
+## Operating Tips
+
+### Startup mode precedence
+
+The effective startup mode is resolved in this order:
+
+1. CLI argument (`start.bat model-router`, `start.sh claude-to-gpt`)
+2. `PROXY_DEFAULT_PROFILE` from `.env` when `start.bat` is run without arguments
+3. `default`
+
+The POSIX launcher currently does not read `PROXY_DEFAULT_PROFILE` from `.env`; use an explicit mode argument or set `PROXY_MODEL_PROFILE` yourself when launching outside the helper script.
+
+### Environment variable roles
+
+- `PROXY_DEFAULT_PROFILE` stores the preferred default for the Windows setup and batch launcher flow
+- `PROXY_MODEL_PROFILE` is the active runtime profile used by the Node.js process
+- `AZURE_API_KEY` is required unless your environment provides it another way
+
+### Common operator checks
+
+- If startup fails immediately, confirm Node.js is installed and available in `PATH`
+- If the proxy starts but requests fail, verify `config.yaml`, Azure endpoints, and `AZURE_API_KEY`
+- If the wrong backend is selected, check whether you passed a mode argument or saved a different `PROXY_DEFAULT_PROFILE`
+- If you use shell scripts on macOS / Linux for the first time, run `chmod +x scripts/*.sh`
 
 ## Client Connection Examples
 
