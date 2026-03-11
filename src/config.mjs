@@ -117,6 +117,32 @@ function loadConfig() {
     nativeResponsesModels: fileConfig?.nativeResponsesModels || [],
     completionsModels: fileConfig?.completionsModels || [],
     unsupportedAnthropicBetas: fileConfig?.unsupportedAnthropicBetas || [],
+    retry: {
+      maxRetries: fileConfig?.retry?.maxRetries ?? 3,
+      fallbackBaseSeconds: fileConfig?.retry?.fallbackBaseSeconds ?? 30,
+      multiplier: fileConfig?.retry?.multiplier ?? 1.6,
+      maxSeconds: fileConfig?.retry?.maxSeconds ?? 180,
+      jitterRatio: fileConfig?.retry?.jitterRatio ?? 0.25,
+      noCapacityDownscaleRatio: fileConfig?.retry?.noCapacityDownscaleRatio ?? 0.7,
+      noCapacityMinTokens: fileConfig?.retry?.noCapacityMinTokens ?? 512,
+    },
+    failover: {
+      openAIBaseUrls: fileConfig?.failover?.openAIBaseUrls || [],
+      modelFallbackMap: fileConfig?.failover?.modelFallbackMap || {},
+    },
+    dynamicMaxCompletionTokens: {
+      enabled: fileConfig?.dynamicMaxCompletionTokens?.enabled ?? true,
+      defaultContextWindow: fileConfig?.dynamicMaxCompletionTokens?.defaultContextWindow ?? 1000000,
+      modelContextWindows: fileConfig?.dynamicMaxCompletionTokens?.modelContextWindows || {},
+      minOutputTokens: fileConfig?.dynamicMaxCompletionTokens?.minOutputTokens ?? 1024,
+      maxOutputTokens: fileConfig?.dynamicMaxCompletionTokens?.maxOutputTokens ?? 32000,
+      outputToInputRatio: fileConfig?.dynamicMaxCompletionTokens?.outputToInputRatio ?? 1.2,
+      maxOutputShareOfContext: fileConfig?.dynamicMaxCompletionTokens?.maxOutputShareOfContext ?? 0.12,
+      safetyBufferTokens: fileConfig?.dynamicMaxCompletionTokens?.safetyBufferTokens ?? 4096,
+      charPerToken: fileConfig?.dynamicMaxCompletionTokens?.charPerToken ?? 4,
+      applyWhenMissing: fileConfig?.dynamicMaxCompletionTokens?.applyWhenMissing ?? true,
+      requestTypeProfiles: fileConfig?.dynamicMaxCompletionTokens?.requestTypeProfiles || [],
+    },
   };
 
   const profileName = process.env.PROXY_MODEL_PROFILE || fileConfig?.activeModelProfile || 'default';

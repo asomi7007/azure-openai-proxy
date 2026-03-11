@@ -53,6 +53,125 @@ function parseRetryAfterSeconds(bodyStr) {
 }
 
 /**
+ * Determine whether a 429 payload indicates transient capacity exhaustion.
+ * 429 본문이 일시적 용량 부족(NoCapacity)인지 판별합니다.
+ */
+export function isNoCapacityError(bodyStr) {
+  try {
+    const parsed = JSON.parse(bodyStr);
+    const code = String(parsed.error?.code || parsed.error?.type || '').toLowerCase();
+    const message = String(parsed.error?.message || parsed.message || '').toLowerCase();
+    return code === 'nocapacity' || message.includes('high demand') || message.includes('provisioned throughput');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Compute retry delay with exponential backoff and jitter.
+ * 지수 백오프 + 지터 기반 재시도 대기 시간을 계산합니다.
+ */
+export function computeRetryDelaySeconds(parsedSec, retryCount, retryConfig = {}) {
+  const baseSeconds = Number.isFinite(parsedSec) ? parsedSec : (retryConfig.fallbackBaseSeconds ?? 30);
+  const multiplier = retryConfig.multiplier ?? 1.6;
+  const maxSeconds = retryConfig.maxSeconds ?? 180;
+  const jitterRatio = retryConfig.jitterRatio ?? 0.25;
+
+  const expDelay = Math.min(maxSeconds, Math.round(baseSeconds * (multiplier ** retryCount)));
+  const jitterSpan = jitterRatio > 0 ? Math.max(1, Math.round(expDelay * jitterRatio)) : 0;
+  const jitter = Math.floor(Math.random() * (jitterSpan * 2 + 1)) - jitterSpan;
+  return Math.max(1, expDelay + jitter);
+}
+
+/**
+ * Downscale max_completion_tokens to improve admission probability under capacity pressure.
+ * 용량 압박 상태에서 admission 확률을 높이기 위해 max_completion_tokens를 축소합니다.
+ */
+export function downscaleMaxCompletionTokens(bodyObj, retryConfig = {}) {
+  if (!bodyObj || typeof bodyObj !== 'object') return { changed: false, body: bodyObj, from: null, to: null };
+
+  const ratio = retryConfig.noCapacityDownscaleRatio ?? 0.7;
+  const minTokens = retryConfig.noCapacityMinTokens ?? 512;
+  const current = Number(bodyObj.max_completion_tokens);
+
+  if (!Number.isFinite(current) || current <= 0) {
+    return { changed: false, body: bodyObj, from: null, to: null };
+  }
+
+  const nextValue = Math.max(minTokens, Math.floor(current * ratio));
+  if (nextValue >= current) {
+    return { changed: false, body: bodyObj, from: current, to: current };
+  }
+
+  const nextBody = { ...bodyObj, max_completion_tokens: nextValue };
+  return { changed: true, body: nextBody, from: current, to: nextValue };
+}
+
+function tryParseJsonBody(buffer) {
+  if (!buffer || buffer.length === 0) return null;
+  try {
+    return JSON.parse(buffer.toString('utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+function tryApplyFailover(targetUrl, bodyObj, config = {}, retryMeta = {}) {
+  const failoverConfig = config.failover || {};
+  const usedKeys = retryMeta.usedFailoverKeys || new Set();
+
+  // 1) Model failover first (deployment switch)
+  const currentModel = bodyObj?.model;
+  if (currentModel && failoverConfig.modelFallbackMap && Array.isArray(failoverConfig.modelFallbackMap[currentModel])) {
+    for (const candidate of failoverConfig.modelFallbackMap[currentModel]) {
+      const key = `model:${currentModel}->${candidate}`;
+      if (!candidate || usedKeys.has(key)) continue;
+
+      const fromPattern = new RegExp(`/deployments/${currentModel}(/|\\?)`);
+      if (fromPattern.test(targetUrl)) {
+        const switchedUrl = targetUrl.replace(fromPattern, `/deployments/${candidate}$1`);
+        const switchedBody = { ...bodyObj, model: candidate };
+        usedKeys.add(key);
+        return {
+          changed: true,
+          targetUrl: switchedUrl,
+          bodyObj: switchedBody,
+          reason: `model ${currentModel} -> ${candidate}`,
+          usedFailoverKeys: usedKeys,
+        };
+      }
+    }
+  }
+
+  // 2) Endpoint failover second (resource/region switch)
+  if (Array.isArray(failoverConfig.openAIBaseUrls) && failoverConfig.openAIBaseUrls.length > 0) {
+    try {
+      const parsed = new URL(targetUrl);
+      const currentOrigin = parsed.origin;
+      for (const base of failoverConfig.openAIBaseUrls) {
+        const fallbackOrigin = new URL(base).origin;
+        const key = `origin:${fallbackOrigin}`;
+        if (fallbackOrigin === currentOrigin || usedKeys.has(key)) continue;
+
+        const switchedUrl = `${fallbackOrigin}${parsed.pathname}${parsed.search}`;
+        usedKeys.add(key);
+        return {
+          changed: true,
+          targetUrl: switchedUrl,
+          bodyObj,
+          reason: `endpoint ${currentOrigin} -> ${fallbackOrigin}`,
+          usedFailoverKeys: usedKeys,
+        };
+      }
+    } catch {
+      // ignore malformed URL/base
+    }
+  }
+
+  return { changed: false, targetUrl, bodyObj, reason: '', usedFailoverKeys: usedKeys };
+}
+
+/**
  * Proxy a normalized request to the final Azure upstream endpoint.
  * 정규화된 요청을 최종 Azure upstream endpoint로 전달합니다.
  * 이 계층은 재시도, 스트리밍 처리, 응답 호환 레이어 변환을 담당합니다.
@@ -67,7 +186,7 @@ function parseRetryAfterSeconds(bodyStr) {
  * @param {string} responsesApiModel - Responses API model name
  * @param {boolean} originalClientRoute - Original client route (for response conversion)
  */
-export function proxyRequest(clientReq, clientRes, targetUrl, headers, bodyBuffer, isStreaming, isAnthropicRoute = false, isResponsesApi = false, responsesApiModel = '', originalClientRoute = false, _retryCount = 0) {
+export function proxyRequest(clientReq, clientRes, targetUrl, headers, bodyBuffer, isStreaming, isAnthropicRoute = false, isResponsesApi = false, responsesApiModel = '', originalClientRoute = false, config = {}, _retryCount = 0, _retryMeta = { usedFailoverKeys: new Set() }) {
   const url = new URL(targetUrl);
   const isHttps = url.protocol === 'https:';
   const transport = isHttps ? https : http;
@@ -112,14 +231,51 @@ export function proxyRequest(clientReq, clientRes, targetUrl, headers, bodyBuffe
         if (statusCode >= 400) {
           logError('PROXY', `Error response (${statusCode}): ${bodyStr.slice(0, 1000)}`);
 
-          // Retry 429 responses with a parsed wait time plus a safety buffer.
-          // 429 응답은 파싱한 대기 시간에 버퍼를 더해 최대 3회 재시도합니다.
-          if (statusCode === 429 && _retryCount < 3) {
+          // Retry 429 with NoCapacity-aware strategy:
+          // 1) token downscale, 2) exponential backoff + jitter, 3) failover endpoint/model.
+          const retryConfig = config.retry || {};
+          const maxRetries = retryConfig.maxRetries ?? 3;
+          if (statusCode === 429 && _retryCount < maxRetries) {
+            let nextTargetUrl = targetUrl;
+            let nextBodyObj = tryParseJsonBody(bodyBuffer);
+
+            const noCapacity = isNoCapacityError(bodyStr);
+            if (noCapacity) {
+              const scaled = downscaleMaxCompletionTokens(nextBodyObj, retryConfig);
+              nextBodyObj = scaled.body;
+              if (scaled.changed) {
+                log('PROXY', `NoCapacity mitigation: max_completion_tokens ${scaled.from} -> ${scaled.to}`);
+              }
+
+              const failoverResult = tryApplyFailover(nextTargetUrl, nextBodyObj, config, _retryMeta);
+              nextTargetUrl = failoverResult.targetUrl;
+              nextBodyObj = failoverResult.bodyObj;
+              _retryMeta = { ..._retryMeta, usedFailoverKeys: failoverResult.usedFailoverKeys };
+              if (failoverResult.changed) {
+                log('PROXY', `NoCapacity mitigation: failover applied (${failoverResult.reason})`);
+              }
+            }
+
+            const nextBodyBuffer = nextBodyObj ? Buffer.from(JSON.stringify(nextBodyObj), 'utf-8') : bodyBuffer;
             const parsedSec = parseRetryAfterSeconds(bodyStr);
-            const waitSec = (parsedSec != null ? parsedSec : 60) + 10;
-            log('PROXY', `Rate limited. Retrying after ${waitSec}s${parsedSec != null ? ` (${parsedSec}+10)` : ' (fallback)'} (attempt ${_retryCount + 1}/3)...`);
+            const waitSec = computeRetryDelaySeconds(parsedSec, _retryCount, retryConfig);
+            log('PROXY', `Rate limited. Retrying after ${waitSec}s (attempt ${_retryCount + 1}/${maxRetries})${noCapacity ? ' [NoCapacity strategy]' : ''}...`);
             setTimeout(() => {
-              proxyRequest(clientReq, clientRes, targetUrl, headers, bodyBuffer, isStreaming, isAnthropicRoute, isResponsesApi, responsesApiModel, originalClientRoute, _retryCount + 1);
+              proxyRequest(
+                clientReq,
+                clientRes,
+                nextTargetUrl,
+                headers,
+                nextBodyBuffer,
+                isStreaming,
+                isAnthropicRoute,
+                isResponsesApi,
+                responsesApiModel,
+                originalClientRoute,
+                config,
+                _retryCount + 1,
+                _retryMeta,
+              );
             }, waitSec * 1000);
             return;
           }

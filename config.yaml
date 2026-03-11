@@ -56,6 +56,79 @@ unsupportedAnthropicBetas:
   - output-128k-2025-02-19
   - context-1m-2025-08-07
 
+# Retry strategy for 429 handling.
+# 429 재시도 전략 설정입니다.
+retry:
+  maxRetries: 4
+  fallbackBaseSeconds: 45
+  multiplier: 1.8
+  maxSeconds: 240
+  jitterRatio: 0.2
+  # NoCapacity 감지 시 max_completion_tokens 축소 비율
+  noCapacityDownscaleRatio: 0.6
+  # NoCapacity 감지 시 축소 하한
+  noCapacityMinTokens: 1024
+
+# Failover strategy for NoCapacity handling.
+# NoCapacity 처리용 failover 설정입니다.
+failover:
+  # Optional alternate Azure OpenAI endpoints (resource/region failover).
+  # 선택: Azure OpenAI 엔드포인트 failover 목록
+  openAIBaseUrls: []
+  # Optional model deployment fallback chain.
+  # 선택: 모델 배포 failover 체인
+  modelFallbackMap:
+    # keep quality first, then lower-load chat model
+    gpt-5.4-pro:
+      - gpt-5.4
+      - gpt-5.2-chat
+    gpt-5.4:
+      - gpt-5.2-chat
+
+# Adaptive max_completion_tokens based on request content size.
+# 요청 내용량 기반 max_completion_tokens 동적 조정 설정입니다.
+dynamicMaxCompletionTokens:
+  enabled: true
+  # Default context window used when model-specific value is absent.
+  # 모델별 값이 없을 때 사용하는 기본 컨텍스트 윈도우
+  defaultContextWindow: 1000000
+  # Optional per-model context window overrides.
+  # 선택: 모델별 컨텍스트 윈도우 오버라이드
+  modelContextWindows:
+    gpt-5.4: 1000000
+    gpt-5.4-pro: 1000000
+    gpt-5.2-chat: 1000000
+  # Hard output bounds
+  minOutputTokens: 1024
+  maxOutputTokens: 32000
+  # Recommended output ~= estimated_input_tokens * ratio
+  outputToInputRatio: 1.2
+  # Do not allocate too much of full context to output in one call.
+  maxOutputShareOfContext: 0.12
+  # Keep a context safety margin to avoid near-limit failures.
+  safetyBufferTokens: 4096
+  # Rough tokenizer heuristic (chars per token)
+  charPerToken: 4
+  # If client omits max tokens, set adaptive value automatically.
+  applyWhenMissing: true
+  # Request-type specific overrides (first match wins).
+  # 요청 유형별 오버라이드 (먼저 매칭된 규칙 우선)
+  requestTypeProfiles:
+    - name: code-heavy
+      keywords: ["code", "implement", "fix", "refactor", "테스트", "코드", "구현", "디버그"]
+      outputToInputRatio: 2.2
+      minOutputTokens: 2048
+      maxOutputTokens: 64000
+      maxOutputShareOfContext: 0.2
+      safetyBufferTokens: 4096
+    - name: summary-concise
+      keywords: ["요약", "summary", "tl;dr", "brief", "간단히"]
+      outputToInputRatio: 0.8
+      minOutputTokens: 512
+      maxOutputTokens: 8192
+      maxOutputShareOfContext: 0.08
+      safetyBufferTokens: 2048
+
 # Model routing profiles selected through PROXY_MODEL_PROFILE.
 # 환경변수 PROXY_MODEL_PROFILE로 선택하는 모델 라우팅 프로필입니다.
 # - default: keep the base mapping behavior / 기본 매핑 동작 유지

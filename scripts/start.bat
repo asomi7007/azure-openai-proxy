@@ -7,10 +7,16 @@ title Azure OpenAI Proxy
 set "SCRIPT_DIR=%~dp0"
 set "PROJECT_DIR=%SCRIPT_DIR%.."
 set "PROFILE=%~1"
-if "%PROFILE%"=="" set "PROFILE=default"
-set "PROXY_MODEL_PROFILE=%PROFILE%"
 
 cd /d "%PROJECT_DIR%"
+
+if "%PROFILE%"=="" (
+    set "PROFILE=default"
+    if exist ".env" (
+        for /f "usebackq delims=" %%A in (`powershell -NoProfile -Command "$line = Get-Content '.env' | Where-Object { $_ -match '^PROXY_DEFAULT_PROFILE=' } | Select-Object -Last 1; if ($line) { $line.Substring(22) }"`) do set "PROFILE=%%A"
+    )
+)
+set "PROXY_MODEL_PROFILE=%PROFILE%"
 
 echo.
 echo ========================================

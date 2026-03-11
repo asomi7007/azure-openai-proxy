@@ -117,6 +117,151 @@ function removeCacheControl(obj) {
   return obj;
 }
 
+function estimatePromptTokens(body, charPerToken = 4) {
+  let chars = 0;
+  const divisor = Math.max(1, Number(charPerToken) || 4);
+
+  const visit = (value) => {
+    if (value == null) return;
+    if (typeof value === 'string') {
+      chars += value.length;
+      return;
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      chars += String(value).length;
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item);
+      return;
+    }
+    if (typeof value === 'object') {
+      for (const v of Object.values(value)) visit(v);
+    }
+  };
+
+  // Count only request-shaping fields that contribute to prompt/context load.
+  visit(body.messages);
+  visit(body.system);
+  visit(body.input);
+  visit(body.prompt);
+  visit(body.instructions);
+  visit(body.tools);
+  visit(body.response_format);
+
+  return Math.max(1, Math.ceil(chars / divisor));
+}
+
+function collectRequestText(body) {
+  const chunks = [];
+
+  const visit = (value) => {
+    if (value == null) return;
+    if (typeof value === 'string') {
+      chunks.push(value);
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item);
+      return;
+    }
+    if (typeof value === 'object') {
+      for (const v of Object.values(value)) visit(v);
+    }
+  };
+
+  visit(body.system);
+  visit(body.messages);
+  visit(body.input);
+  visit(body.prompt);
+  visit(body.instructions);
+
+  return chunks.join('\n').toLowerCase();
+}
+
+function selectRequestTypeRule(body, estimatedInputTokens, adaptive) {
+  const rules = Array.isArray(adaptive.requestTypeProfiles) ? adaptive.requestTypeProfiles : [];
+  if (rules.length === 0) return null;
+
+  const requestText = collectRequestText(body);
+  const hasTools = Array.isArray(body.tools) && body.tools.length > 0;
+
+  for (const rule of rules) {
+    if (!rule || typeof rule !== 'object') continue;
+    if (rule.enabled === false) continue;
+
+    const minInputTokens = Number(rule.minInputTokens ?? 0);
+    if (Number.isFinite(minInputTokens) && estimatedInputTokens < minInputTokens) continue;
+
+    const requiresTools = rule.requiresTools;
+    if (typeof requiresTools === 'boolean' && requiresTools !== hasTools) continue;
+
+    const keywords = Array.isArray(rule.keywords) ? rule.keywords.filter(Boolean) : [];
+    if (keywords.length > 0) {
+      const matched = keywords.some((k) => requestText.includes(String(k).toLowerCase()));
+      if (!matched) continue;
+    }
+
+    return rule;
+  }
+
+  return null;
+}
+
+function applyAdaptiveMaxCompletionTokens(body, config) {
+  const adaptive = config.dynamicMaxCompletionTokens;
+  if (!adaptive || adaptive.enabled === false) return;
+
+  const model = body.model || '';
+  const modelWindows = adaptive.modelContextWindows || {};
+  const contextWindow = Number(modelWindows[model] ?? adaptive.defaultContextWindow ?? 1000000);
+  if (!Number.isFinite(contextWindow) || contextWindow <= 0) return;
+
+  const baseMinOutputTokens = Math.max(1, Number(adaptive.minOutputTokens ?? 1024));
+  const baseMaxOutputTokens = Math.max(baseMinOutputTokens, Number(adaptive.maxOutputTokens ?? 64000));
+  const baseOutputToInputRatio = Math.max(0.1, Number(adaptive.outputToInputRatio ?? 1.2));
+  const baseMaxOutputShare = Math.min(1, Math.max(0.01, Number(adaptive.maxOutputShareOfContext ?? 0.15)));
+  const baseSafetyBufferTokens = Math.max(0, Number(adaptive.safetyBufferTokens ?? 2048));
+  const charPerToken = Math.max(1, Number(adaptive.charPerToken ?? 4));
+  const applyWhenMissing = adaptive.applyWhenMissing !== false;
+
+  const estimatedInputTokens = estimatePromptTokens(body, charPerToken);
+  const matchedRule = selectRequestTypeRule(body, estimatedInputTokens, adaptive);
+
+  const minOutputTokens = Math.max(1, Number(matchedRule?.minOutputTokens ?? baseMinOutputTokens));
+  const maxOutputTokens = Math.max(minOutputTokens, Number(matchedRule?.maxOutputTokens ?? baseMaxOutputTokens));
+  const outputToInputRatio = Math.max(0.1, Number(matchedRule?.outputToInputRatio ?? baseOutputToInputRatio));
+  const maxOutputShare = Math.min(1, Math.max(0.01, Number(matchedRule?.maxOutputShareOfContext ?? baseMaxOutputShare)));
+  const safetyBufferTokens = Math.max(0, Number(matchedRule?.safetyBufferTokens ?? baseSafetyBufferTokens));
+
+  const upperByShare = Math.floor(contextWindow * maxOutputShare);
+  const upperByAvailable = Math.floor(contextWindow - estimatedInputTokens - safetyBufferTokens);
+  const hardUpperBound = Math.max(1, Math.min(maxOutputTokens, upperByShare, upperByAvailable));
+
+  const ratioTarget = Math.ceil(estimatedInputTokens * outputToInputRatio);
+  const recommended = Math.min(hardUpperBound, Math.max(minOutputTokens, ratioTarget));
+
+  const requested = Number(body.max_completion_tokens);
+  let nextValue = null;
+
+  if (Number.isFinite(requested) && requested > 0) {
+    nextValue = Math.min(requested, recommended);
+  } else if (applyWhenMissing) {
+    nextValue = recommended;
+  }
+
+  if (!Number.isFinite(nextValue) || nextValue <= 0) return;
+  if (Number.isFinite(requested) && requested === nextValue) return;
+
+  body.max_completion_tokens = nextValue;
+  const ruleLabel = matchedRule?.name ? `, rule=${matchedRule.name}` : '';
+  if (Number.isFinite(requested) && requested > 0) {
+    log('PROXY', `Adaptive max_completion_tokens: ${requested} -> ${nextValue} (input~${estimatedInputTokens}t, model=${model || 'unknown'}${ruleLabel})`);
+  } else {
+    log('PROXY', `Adaptive max_completion_tokens set: ${nextValue} (input~${estimatedInputTokens}t, model=${model || 'unknown'}${ruleLabel})`);
+  }
+}
+
 /**
  * Transform a parsed request body according to the selected compatibility route.
  * 선택된 호환 라우트에 맞춰 파싱된 요청 본문을 변환합니다.
@@ -159,6 +304,8 @@ export function transformBody(body, isAnthropicRoute, config) {
       delete body.max_tokens;
       log('PROXY', `Converted max_tokens → max_completion_tokens: ${body.max_completion_tokens}`);
     }
+
+    applyAdaptiveMaxCompletionTokens(body, config);
   }
 
   const isStreaming = !!body.stream;

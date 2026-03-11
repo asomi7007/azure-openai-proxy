@@ -85,3 +85,96 @@ test('OpenAI route converts max_tokens to max_completion_tokens', async () => {
   assert.equal(mapped.max_completion_tokens, 512);
   assert.equal(mapped.max_tokens, undefined);
 });
+
+test('OpenAI route adaptively clamps oversized max_completion_tokens', async () => {
+  const config = await loadConfigWithProfile('default');
+  config.dynamicMaxCompletionTokens = {
+    enabled: true,
+    defaultContextWindow: 1000000,
+    modelContextWindows: { 'gpt-5.4': 1000000 },
+    minOutputTokens: 1024,
+    maxOutputTokens: 32000,
+    outputToInputRatio: 1.2,
+    maxOutputShareOfContext: 0.12,
+    safetyBufferTokens: 4096,
+    charPerToken: 4,
+    applyWhenMissing: true,
+  };
+
+  const mapped = transformBody(
+    {
+      model: 'gpt-5.4',
+      messages: [{ role: 'user', content: '짧은 질문' }],
+      max_tokens: 32000,
+    },
+    false,
+    config,
+  ).body;
+
+  assert.ok(mapped.max_completion_tokens < 32000);
+  assert.ok(mapped.max_completion_tokens >= 1024);
+});
+
+test('OpenAI route sets adaptive max_completion_tokens when client omitted it', async () => {
+  const config = await loadConfigWithProfile('default');
+  config.dynamicMaxCompletionTokens = {
+    enabled: true,
+    defaultContextWindow: 1000000,
+    modelContextWindows: { 'gpt-5.4': 1000000 },
+    minOutputTokens: 1024,
+    maxOutputTokens: 32000,
+    outputToInputRatio: 1.2,
+    maxOutputShareOfContext: 0.12,
+    safetyBufferTokens: 4096,
+    charPerToken: 4,
+    applyWhenMissing: true,
+  };
+
+  const mapped = transformBody(
+    {
+      model: 'gpt-5.4',
+      messages: [{ role: 'user', content: '요약해줘' }],
+    },
+    false,
+    config,
+  ).body;
+
+  assert.ok(mapped.max_completion_tokens >= 1);
+});
+
+test('Request-type profile can raise output budget for code-heavy prompts', async () => {
+  const config = await loadConfigWithProfile('default');
+  config.dynamicMaxCompletionTokens = {
+    enabled: true,
+    defaultContextWindow: 1000000,
+    modelContextWindows: { 'gpt-5.4': 1000000 },
+    minOutputTokens: 1024,
+    maxOutputTokens: 32000,
+    outputToInputRatio: 1.2,
+    maxOutputShareOfContext: 0.12,
+    safetyBufferTokens: 4096,
+    charPerToken: 4,
+    applyWhenMissing: true,
+    requestTypeProfiles: [
+      {
+        name: 'code-heavy',
+        keywords: ['code', 'implement', 'fix'],
+        outputToInputRatio: 2.5,
+        minOutputTokens: 4096,
+        maxOutputTokens: 64000,
+        maxOutputShareOfContext: 0.25,
+      },
+    ],
+  };
+
+  const mapped = transformBody(
+    {
+      model: 'gpt-5.4',
+      messages: [{ role: 'user', content: 'Please implement code for parser.' }],
+    },
+    false,
+    config,
+  ).body;
+
+  assert.ok(mapped.max_completion_tokens >= 4096);
+});

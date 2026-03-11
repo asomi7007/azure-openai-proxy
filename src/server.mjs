@@ -227,7 +227,7 @@ export function createProxyServer(config) {
 
       // Proxy the request
       // originalClientRoute 전달: response conversion은 원래 client route 기준으로 결정
-      proxyRequest(req, res, targetUrl, transformedHeaders, bodyBuffer, isStreaming, isAnthropicRoute, isResponsesApi, responsesApiModel, originalClientRoute);
+      proxyRequest(req, res, targetUrl, transformedHeaders, bodyBuffer, isStreaming, isAnthropicRoute, isResponsesApi, responsesApiModel, originalClientRoute, config);
     } catch (err) {
       logError('SERVER', `Unhandled error: ${err.message}`);
       logError('SERVER', `Stack: ${err.stack}`);
