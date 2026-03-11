@@ -1,11 +1,13 @@
 {
   "name": "azure-openai-proxy",
   "version": "1.0.0",
-  "description": "Azure AI Foundry Proxy for Roo Code - OpenAI/Anthropic compatible",
+  "description": "Azure AI Foundry compatibility proxy for OpenAI/Anthropic-style clients",
   "type": "module",
   "main": "src/index.mjs",
   "scripts": {
     "start": "node src/index.mjs",
+    "start:claude-to-gpt": "node src/index.mjs",
+    "start:model-router": "node src/index.mjs",
     "test": "node --test",
     "build:bundle": "esbuild src/index.mjs --bundle --platform=node --format=esm --outfile=dist/proxy.mjs",
     "build": "npm run build:bundle"

@@ -39,6 +39,21 @@ test('claude-to-gpt profile makes Claude request routable to OpenAI', async () =
   assert.equal(isOpenAIModel('claude-opus-4-6', config), true);
 });
 
+test('model-router profile maps Claude requests to model-router deployment', async () => {
+  const config = await loadConfigWithProfile('model-router');
+  const mapped = transformBody(
+    {
+      model: 'claude-opus-4-6',
+      messages: [{ role: 'user', content: 'plan this project' }],
+    },
+    true,
+    config,
+  ).body;
+
+  assert.equal(mapped.model, 'model-router');
+  assert.equal(isOpenAIModel('claude-opus-4-6', config), true);
+});
+
 test('max_tokens is converted to max_completion_tokens for OpenAI routes', async () => {
   const config = await loadConfigWithProfile('claude-to-gpt');
   const mapped = transformBody(

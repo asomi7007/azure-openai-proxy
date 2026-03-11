@@ -1,10 +1,10 @@
 import { log, logError } from '../utils/logger.mjs';
 
 /**
- * Anthropic API 요구사항 보정:
- * 1. assistant 메시지의 tool_use 블록마다 바로 다음 user 메시지에
- *    대응하는 tool_result 블록이 있어야 함 → 없으면 자동 삽입
- * 2. input이 없거나 빈 tool_use 블록 제거 (write_to_file content 누락 등)
+ * Normalize Anthropic message sequences before forwarding them upstream.
+ * upstream으로 보내기 전에 Anthropic 메시지 시퀀스를 정규화합니다.
+ * 1. tool_use 다음에는 대응하는 tool_result가 있어야 하며, 없으면 자동 삽입합니다.
+ * 2. input이 없거나 비어 있는 tool_use 블록은 제거합니다.
  */
 function sanitizeMessages(messages) {
   if (!Array.isArray(messages)) return messages;
@@ -118,7 +118,8 @@ function removeCacheControl(obj) {
 }
 
 /**
- * Transform request body based on route type
+ * Transform a parsed request body according to the selected compatibility route.
+ * 선택된 호환 라우트에 맞춰 파싱된 요청 본문을 변환합니다.
  * @param {object} body - Parsed JSON body
  * @param {boolean} isAnthropicRoute - Whether this is an Anthropic route
  * @param {object} config - Configuration object

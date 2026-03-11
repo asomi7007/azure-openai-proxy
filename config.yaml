@@ -6,7 +6,8 @@ azure:
   openAIBaseUrl: "https://claude-opus-4-5-resource-kr.openai.azure.com"
   openAIApiVersion: "2024-05-01-preview"
   openAIResponsesApiVersion: "preview"
-  # apiKey는 .env에서 로드
+  # API key is loaded from .env.
+  # API 키는 .env에서 로드합니다.
 
 unsupportedParams:
   - prompt_cache_retention
@@ -30,15 +31,19 @@ modelNameMap:
   gpt-5.4: gpt-5.4
   gpt-5.4-pro: gpt-5.4-pro
 
-# Azure Responses API를 네이티브로 지원하는 모델 (변환 없이 직접 전달)
-# api-version: openAIResponsesApiVersion 사용
+# Models that can use Azure Responses API natively without request/response reshaping.
+# 요청/응답 변환 없이 Azure Responses API를 네이티브로 직접 사용할 수 있는 모델입니다.
+# Uses openAIResponsesApiVersion as the api-version.
+# api-version으로 openAIResponsesApiVersion을 사용합니다.
 nativeResponsesModels:
   - gpt-5.3-codex
 
-# chat/completions 대신 /completions 엔드포인트를 사용하는 모델 (Codex 계열)
+# Models that must use the /completions endpoint instead of /chat/completions.
+# /chat/completions 대신 /completions endpoint를 사용해야 하는 모델입니다.
 completionsModels: []
 
-# 이 모델들은 Anthropic 형식으로 들어와도 Azure OpenAI로 자동 변환·라우팅
+# Models that trigger model-based rerouting into the Azure OpenAI path even when the incoming request is Anthropic-compatible.
+# 들어오는 요청이 Anthropic 호환 형식이어도 Azure OpenAI 경로로 모델 기반 재라우팅되는 모델입니다.
 openAIModels:
   - gpt-5.2-chat
   - gpt-5.3-codex
@@ -51,16 +56,32 @@ unsupportedAnthropicBetas:
   - output-128k-2025-02-19
   - context-1m-2025-08-07
 
-# 모델 변환 프로필 (환경변수 PROXY_MODEL_PROFILE로 선택)
-# - default: 기존 동작
-# - claude-to-gpt: Claude 모델 요청을 GPT 배포로 변환
+# Model routing profiles selected through PROXY_MODEL_PROFILE.
+# 환경변수 PROXY_MODEL_PROFILE로 선택하는 모델 라우팅 프로필입니다.
+# - default: keep the base mapping behavior / 기본 매핑 동작 유지
+# - claude-to-gpt: reroute Claude-style requests into Azure GPT deployments / Claude 요청을 Azure GPT 배포로 재라우팅
+# - model-router: reroute Claude-style requests into the Azure model-router deployment / Claude 요청을 Azure model-router 배포로 재라우팅
 modelProfiles:
   claude-to-gpt:
     modelNameMap:
-      # 요청이 Claude여도 Azure OpenAI GPT 배포로 강제 매핑
+      # Force Claude-style requests onto Azure OpenAI GPT deployments.
+      # Claude 형식 요청도 Azure OpenAI GPT 배포로 강제 매핑합니다.
       claude-opus-4-6: gpt-5.4-pro
       claude-sonnet-4-6: gpt-5.4
-    # Anthropic 형식 요청이 이 리스트 모델로 해석되면 OpenAI 라우트로 자동 변환
+    # Treat these resolved models as Azure OpenAI targets even for Anthropic-compatible input.
+    # Anthropic 호환 입력이라도 이 리스트 모델로 해석되면 Azure OpenAI 경로로 자동 전환합니다.
     openAIModels:
       - gpt-5.4-pro
       - gpt-5.4
+
+  model-router:
+    modelNameMap:
+      # Map Claude-style requests onto the Azure OpenAI model-router deployment.
+      # Claude 형식 요청을 Azure OpenAI model-router 배포로 매핑합니다.
+      claude-opus-4-6: model-router
+      claude-sonnet-4-6: model-router
+      claude-haiku-4-5-20251001: model-router
+    # Include the model-router deployment in the Azure OpenAI target set.
+    # model-router 배포를 Azure OpenAI 대상 집합에 포함합니다.
+    openAIModels:
+      - model-router

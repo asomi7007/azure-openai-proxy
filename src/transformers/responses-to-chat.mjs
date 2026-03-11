@@ -1,12 +1,14 @@
 import { log } from '../utils/logger.mjs';
 
 /**
- * OpenAI Responses API ↔ Chat Completions API 변환
- * Azure OpenAI는 Responses API 미지원이므로 chat/completions로 변환
+ * Convert between OpenAI Responses API and Chat Completions API shapes.
+ * OpenAI Responses API와 Chat Completions API 형식 사이를 변환합니다.
+ * Azure OpenAI가 모든 Responses 경로를 직접 지원하지 않을 때 호환 레이어로 동작합니다.
  */
 
 /**
- * Responses API 요청 body → Chat Completions 요청 body 변환
+ * Convert a Responses API request body into a Chat Completions request body.
+ * Responses API 요청 본문을 Chat Completions 요청 본문으로 변환합니다.
  */
 export function convertRequestResponsesToChat(body) {
   const result = {};
@@ -80,7 +82,8 @@ export function convertRequestResponsesToChat(body) {
 }
 
 /**
- * Chat Completions 응답 → Responses API 응답 변환 (non-streaming)
+ * Convert a non-streaming Chat Completions response back into Responses API shape.
+ * non-streaming Chat Completions 응답을 Responses API 형식으로 복원합니다.
  */
 export function convertResponseChatToResponses(chatBody, originalModel) {
   const choice = chatBody.choices?.[0];
@@ -145,8 +148,9 @@ export function convertResponseChatToResponses(chatBody, originalModel) {
 }
 
 /**
- * Streaming: Chat Completions SSE 이벤트 → Responses API SSE 이벤트 변환
- * Node.js Transform stream 스타일로 동작
+ * Convert Chat Completions SSE events into Responses API SSE events.
+ * Chat Completions SSE 이벤트를 Responses API SSE 이벤트로 변환합니다.
+ * Node.js Transform stream 스타일의 상태 기반 변환기로 동작합니다.
  */
 export function createResponsesStreamTransformer(originalModel) {
   let responseId = null;

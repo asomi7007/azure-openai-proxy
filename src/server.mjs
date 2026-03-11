@@ -7,7 +7,8 @@ import { proxyRequest } from './proxy.mjs';
 import { log, logError } from './utils/logger.mjs';
 
 /**
- * Collect request body into a Buffer
+ * Collect the full request body into a Buffer.
+ * 요청 본문 전체를 Buffer로 수집합니다.
  * @param {import('node:http').IncomingMessage} req
  * @returns {Promise<Buffer>}
  */
@@ -21,7 +22,8 @@ function collectBody(req) {
 }
 
 /**
- * Send CORS headers
+ * Send permissive CORS headers for browser-based clients.
+ * 브라우저 기반 클라이언트를 위해 CORS 헤더를 설정합니다.
  * @param {import('node:http').ServerResponse} res
  */
 function setCorsHeaders(res) {
@@ -32,7 +34,8 @@ function setCorsHeaders(res) {
 }
 
 /**
- * OpenAI 표준 경로를 Azure OpenAI 배포 경로로 변환
+ * Convert an OpenAI-style endpoint path into an Azure deployment path.
+ * OpenAI 호환 경로를 Azure deployment 경로로 변환합니다.
  * /openai/v1/chat/completions → /openai/deployments/{model}/chat/completions?api-version=...
  * /openai/v1/responses        → /openai/deployments/{model}/responses?api-version=...
  */
@@ -66,7 +69,8 @@ function toAzureOpenAIPath(targetPath, model, config) {
 }
 
 /**
- * Create and return the HTTP server
+ * Create the main HTTP compatibility proxy server.
+ * OpenAI/Anthropic 호환 요청을 Azure 대상으로 중계하는 메인 HTTP 서버를 생성합니다.
  * @param {object} config - Configuration object
  * @returns {import('node:http').Server}
  */
@@ -95,9 +99,10 @@ export function createProxyServer(config) {
     }
 
     try {
-      // URL 기반 1차 라우팅 판단
-      // /anthropic/* 또는 /v1/messages → Anthropic Claude
-      // /openai/*, /v1/responses, /v1/chat/completions → Azure OpenAI
+      // Primary route selection is URL-based.
+      // 1차 라우팅은 URL을 기준으로 결정합니다.
+      // /anthropic/* 또는 /v1/messages → Anthropic-compatible path
+      // /openai/*, /v1/responses, /v1/chat/completions → Azure OpenAI path
       let isAnthropicRoute = req.url.startsWith('/anthropic') || req.url.startsWith('/v1/messages');
       let originalClientRoute = isAnthropicRoute; // ← 원래 client 라우트 저장 (response 변환용)
       let targetPath = req.url;
@@ -124,8 +129,9 @@ export function createProxyServer(config) {
         try {
           let parsedBody = JSON.parse(rawBody.toString('utf-8'));
 
-          // 모델명 기반 라우팅 오버라이드 (Summon 방식):
-          // Anthropic 형식으로 들어왔어도 OpenAI 모델이면 → 포맷 변환 후 Azure OpenAI로
+          // Model-based rerouting can override the initial URL-based decision.
+          // 모델 기반 재라우팅은 URL 기반 초기 판정을 덮어쓸 수 있습니다.
+          // Anthropic 형식 요청이라도 OpenAI 대상 모델이면 변환 후 Azure OpenAI로 보냅니다.
           if (isAnthropicRoute && isOpenAIModel(parsedBody.model, config)) {
             log('PROXY', `Model-based reroute: ${parsedBody.model} → Azure OpenAI (Chat Completions)`);
             parsedBody = convertAnthropicToOpenAI(parsedBody);
@@ -136,8 +142,8 @@ export function createProxyServer(config) {
             targetPath = '/anthropic' + req.url;
           }
 
-          // Responses API 요청 감지 및 Chat Completions로 변환
-          // native 모델(gpt-5.3-codex 등)은 Azure Responses API 직접 지원 → 변환 불필요
+          // Responses API requests are converted unless the target model supports a native path.
+          // 대상 모델이 native Responses 경로를 지원하지 않으면 Chat Completions로 변환합니다.
           if (!isAnthropicRoute && targetPath.includes('/v1/responses') && parsedBody.input != null) {
             const isNative = config.nativeResponsesModels?.includes(parsedBody.model);
             if (isNative) {

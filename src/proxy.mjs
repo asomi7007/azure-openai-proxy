@@ -5,9 +5,9 @@ import { convertResponseChatToResponses, createResponsesStreamTransformer } from
 import { convertOpenAIToAnthropic, OpenAIToAnthropicStreamTransformer } from './transformers/openai-to-anthropic.mjs';
 
 /**
- * Anthropic 에러 형식으로 변환 (Azure → Anthropic)
- * 확장 프로그램(Claude Code, Roo Code 등)이 Anthropic 형식만 파싱할 수 있으므로
- * Azure 형식 에러를 Anthropic 형식으로 변환
+ * Convert an Azure-style error payload into an Anthropic-style error envelope.
+ * Azure 에러 응답을 Anthropic 호환 에러 형식으로 변환합니다.
+ * 일부 Anthropic-compatible 클라이언트는 Anthropic 형식 에러만 안정적으로 파싱합니다.
  */
 function toAnthropicError(statusCode, bodyStr) {
   try {
@@ -38,7 +38,8 @@ function toAnthropicError(statusCode, bodyStr) {
 }
 
 /**
- * 429 에러 메시지에서 대기 시간(초) 파싱
+ * Parse the retry delay in seconds from a 429 error payload.
+ * 429 에러 본문에서 재시도 대기 시간(초)을 추출합니다.
  * "Please wait 52 seconds before retrying" → 52
  */
 function parseRetryAfterSeconds(bodyStr) {
@@ -52,7 +53,9 @@ function parseRetryAfterSeconds(bodyStr) {
 }
 
 /**
- * Proxy a request to the target Azure endpoint
+ * Proxy a normalized request to the final Azure upstream endpoint.
+ * 정규화된 요청을 최종 Azure upstream endpoint로 전달합니다.
+ * 이 계층은 재시도, 스트리밍 처리, 응답 호환 레이어 변환을 담당합니다.
  * @param {import('node:http').IncomingMessage} clientReq - Original client request
  * @param {import('node:http').ServerResponse} clientRes - Client response object
  * @param {string} targetUrl - Full target URL
@@ -109,7 +112,8 @@ export function proxyRequest(clientReq, clientRes, targetUrl, headers, bodyBuffe
         if (statusCode >= 400) {
           logError('PROXY', `Error response (${statusCode}): ${bodyStr.slice(0, 1000)}`);
 
-          // 429: 자동 재시도 (최대 3회)
+          // Retry 429 responses with a parsed wait time plus a safety buffer.
+          // 429 응답은 파싱한 대기 시간에 버퍼를 더해 최대 3회 재시도합니다.
           if (statusCode === 429 && _retryCount < 3) {
             const parsedSec = parseRetryAfterSeconds(bodyStr);
             const waitSec = (parsedSec != null ? parsedSec : 60) + 10;
@@ -135,11 +139,15 @@ export function proxyRequest(clientReq, clientRes, targetUrl, headers, bodyBuffe
           log('PROXY', `Response (${statusCode}, ${bodyStr.length} bytes): ${bodyStr.slice(0, 300)}`);
         }
 
-        // Responses API: Chat Completions 응답 → Responses API 응답 변환
+        // Rebuild a Responses-compatible payload when the upstream answered with Chat Completions.
+        // upstream가 Chat Completions로 응답한 경우 Responses 호환 payload로 다시 구성합니다.
         if (isResponsesApi && statusCode === 200) {
           try {
             const chatBody = JSON.parse(bodyStr);
             const model = chatBody.model || '';
+            if (model) {
+              log('PROXY', `Upstream model: ${model}`);
+            }
             const converted = convertResponseChatToResponses(chatBody, model);
             const convertedStr = JSON.stringify(converted);
             log('PROXY', `Chat→Responses (non-stream) converted`);
@@ -154,11 +162,14 @@ export function proxyRequest(clientReq, clientRes, targetUrl, headers, bodyBuffe
           }
         }
 
-        // OpenAI → Anthropic 응답 변환 (Claude Code에서 OpenAI 모델 요청했을 때)
-        // originalClientRoute가 true면 client는 Anthropic 형식 요청 → response도 Anthropic 형식으로 변환
+        // Preserve the original client contract when an Anthropic-style client was rerouted to OpenAI.
+        // originalClientRoute가 true면 Anthropic 호환 클라이언트 계약을 유지하도록 응답도 Anthropic 형식으로 복원합니다.
         if (originalClientRoute && statusCode === 200 && !isResponsesApi) {
           try {
             const openaiBody = JSON.parse(bodyStr);
+            if (openaiBody.model) {
+              log('PROXY', `Selected model: ${openaiBody.model}`);
+            }
             // OpenAI 응답 포맷 확인 (choices 필드)
             if (openaiBody.choices) {
               const anthropicBody = convertOpenAIToAnthropic(openaiBody);
@@ -194,7 +205,8 @@ export function proxyRequest(clientReq, clientRes, targetUrl, headers, bodyBuffe
       return;
     }
 
-    // Streaming: Responses API면 SSE 변환, OpenAI→Anthropic 변환, 아니면 그대로 pipe
+    // Streaming responses either go through a compatibility transformer or pass straight through.
+    // 스트리밍 응답은 호환 레이어 변환을 거치거나, 필요 없으면 그대로 전달합니다.
     if (isResponsesApi) {
       log('PROXY', `Stream (Responses API SSE transform)`);
       const responseHeaders = { ...proxyRes.headers };
@@ -228,8 +240,13 @@ export function proxyRequest(clientReq, clientRes, targetUrl, headers, bodyBuffe
       clientRes.writeHead(statusCode, responseHeaders);
 
       const transformer = new OpenAIToAnthropicStreamTransformer();
+      let selectedModelLogged = false;
       proxyRes.on('data', (chunk) => {
         const transformed = transformer.transform(chunk);
+        if (!selectedModelLogged && transformer.model) {
+          selectedModelLogged = true;
+          log('PROXY', `Upstream model(s): ${transformer.model}`);
+        }
         if (transformed) clientRes.write(transformed);
       });
       proxyRes.on('end', () => {
