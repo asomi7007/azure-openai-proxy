@@ -6,6 +6,158 @@ import { log } from '../utils/logger.mjs';
  * Azure OpenAI가 모든 Responses 경로를 직접 지원하지 않을 때 호환 레이어로 동작합니다.
  */
 
+function toResponsesContent(content, role = 'user') {
+  const textType = role === 'assistant' ? 'output_text' : 'input_text';
+  const imageType = role === 'assistant' ? null : 'input_image';
+
+  if (typeof content === 'string') {
+    return content === '' ? [] : [{ type: textType, text: content }];
+  }
+
+  if (!Array.isArray(content)) return [];
+
+  const parts = [];
+  for (const part of content) {
+    if (!part || typeof part !== 'object') continue;
+
+    if (part.type === 'text' && part.text != null && part.text !== '') {
+      parts.push({ type: textType, text: String(part.text) });
+      continue;
+    }
+
+    if (part.type === 'image_url' && imageType) {
+      const imageUrl = typeof part.image_url === 'string'
+        ? part.image_url
+        : part.image_url?.url;
+      if (!imageUrl) continue;
+
+      const imagePart = { type: imageType, image_url: imageUrl };
+      if (part.image_url?.detail) imagePart.detail = part.image_url.detail;
+      parts.push(imagePart);
+    }
+  }
+
+  return parts;
+}
+
+function toToolOutputText(content) {
+  if (typeof content === 'string') return content;
+  const parts = toResponsesContent(content, 'tool')
+    .filter(part => part.type === 'input_text')
+    .map(part => part.text);
+  return parts.join('\n');
+}
+
+function sanitizeResponsesUser(user) {
+  if (user == null) return undefined;
+  const value = String(user);
+  if (value.length <= 64) return value;
+  log('CONVERT', `Dropping OpenAI field 'user' for Responses compatibility (max length 64 exceeded: ${value.length})`);
+  return undefined;
+}
+
+/**
+ * Convert a Chat Completions request body into a Responses API request body.
+ * Chat Completions 요청 본문을 Responses API 요청 본문으로 변환합니다.
+ */
+export function convertRequestChatToResponses(body) {
+  const result = {};
+
+  if (body.model) result.model = body.model;
+  if (body.stream != null) result.stream = body.stream;
+
+  const instructions = [];
+  const input = [];
+
+  for (const msg of body.messages || []) {
+    if (!msg || typeof msg !== 'object') continue;
+
+    if (msg.role === 'system' || msg.role === 'developer') {
+      const text = toResponsesContent(msg.content, 'system')
+        .filter(part => part.type === 'input_text')
+        .map(part => part.text)
+        .join('\n');
+      if (text) instructions.push(text);
+      continue;
+    }
+
+    if (msg.role === 'tool') {
+      input.push({
+        type: 'function_call_output',
+        call_id: msg.tool_call_id || `call_${Date.now()}_${input.length}`,
+        output: toToolOutputText(msg.content),
+      });
+      continue;
+    }
+
+    if (msg.role === 'assistant' && Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
+      const assistantContent = toResponsesContent(msg.content, 'assistant');
+      if (assistantContent.length > 0) {
+        input.push({
+          type: 'message',
+          role: 'assistant',
+          content: assistantContent,
+        });
+      }
+
+      for (const toolCall of msg.tool_calls) {
+        input.push({
+          type: 'function_call',
+          call_id: toolCall.id || `call_${Date.now()}_${input.length}`,
+          name: toolCall.function?.name || '',
+          arguments: toolCall.function?.arguments || '{}',
+        });
+      }
+      continue;
+    }
+
+    const content = toResponsesContent(msg.content, msg.role || 'user');
+    input.push({
+      type: 'message',
+      role: msg.role || 'user',
+      content: content.length > 0
+        ? content
+        : [{ type: (msg.role || 'user') === 'assistant' ? 'output_text' : 'input_text', text: '' }],
+    });
+  }
+
+  if (instructions.length > 0) result.instructions = instructions.join('\n\n');
+  result.input = input;
+
+  if (body.max_output_tokens != null) result.max_output_tokens = body.max_output_tokens;
+  else if (body.max_completion_tokens != null) result.max_output_tokens = body.max_completion_tokens;
+  else if (body.max_tokens != null) result.max_output_tokens = body.max_tokens;
+
+  if (body.temperature != null) result.temperature = body.temperature;
+  if (body.top_p != null) result.top_p = body.top_p;
+  if (body.stop != null) result.stop = body.stop;
+
+  if (body.reasoning_effort != null) {
+    result.reasoning = { effort: body.reasoning_effort };
+  }
+
+  if (Array.isArray(body.tools) && body.tools.length > 0) {
+    result.tools = body.tools
+      .map(tool => {
+        if (tool?.type !== 'function' || !tool.function) return null;
+        return {
+          type: 'function',
+          name: tool.function.name,
+          description: tool.function.description || '',
+          parameters: tool.function.parameters || {},
+        };
+      })
+      .filter(Boolean);
+  }
+
+  if (body.tool_choice != null) result.tool_choice = body.tool_choice;
+  const responsesUser = sanitizeResponsesUser(body.user);
+  if (responsesUser != null) result.user = responsesUser;
+
+  log('CONVERT', `Chat→Responses: ${input.length} input items, model=${body.model}`);
+  return result;
+}
+
 /**
  * Convert a Responses API request body into a Chat Completions request body.
  * Responses API 요청 본문을 Chat Completions 요청 본문으로 변환합니다.

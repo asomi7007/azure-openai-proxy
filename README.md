@@ -230,8 +230,9 @@ curl http://localhost:8081/health
 
 ### 2) Claude API → Azure GPT 배포
 
-- Claude API 형식 요청을 받아 OpenAI Chat Completions 형식으로 변환
+- Claude API 형식 요청을 받아 OpenAI 형식으로 변환하고, 대상 배포에 따라 Chat Completions 또는 Responses로 전달
 - `claude-to-gpt` 프로필을 통해 Claude 모델 요청을 Azure GPT 배포로 매핑
+- 이미 `gpt-*` 같은 OpenAI 계열 모델 ID로 들어오는 요청도 같은 `modelNameMap` 기준으로 Azure OpenAI deployment에 정규화됨
 - Anthropic 호환 클라이언트를 유지한 채 실제 백엔드는 GPT 계열 배포를 사용할 수 있음
 
 ### 3) Claude API → Azure model-router 배포
@@ -331,6 +332,7 @@ modelNameMap:
 
 nativeResponsesModels:
   - gpt-5.3-codex
+  - gpt-5.4-pro
 
 completionsModels: []
 
@@ -388,7 +390,8 @@ AZURE_API_KEY=your-api-key-here
 ### `claude-to-gpt`
 
 - Claude 모델 요청을 Azure GPT deployment로 재매핑
-- Anthropic 형식 요청을 OpenAI Chat Completions 형식으로 변환
+- Anthropic 형식 요청을 OpenAI 형식으로 변환하고, 대상 배포에 따라 Chat Completions 또는 Responses로 전달
+- OpenAI 계열 모델 요청도 동일한 Azure OpenAI deployment 매핑을 유지
 - Anthropic 호환 클라이언트를 유지하면서 GPT backend를 사용하고 싶을 때 적합
 
 실행 예시:
@@ -428,7 +431,7 @@ PROXY_MODEL_PROFILE=model-router npm start
 | 모드 | 적합한 경우 | 클라이언트 패턴 | 결과 |
 |------|------|------|------|
 | `default` | 일반적인 Azure 호환 프록시 사용 | 이미 Azure 배포에 맞춰진 OpenAI/Anthropic 호환 클라이언트 | 원래 프로토콜을 유지한 채 Azure 호환 대상에 전달 |
-| `claude-to-gpt` | Claude 스타일 클라이언트를 GPT 배포로 연결하고 싶을 때 | Claude Code, Roo Code, 내부 도구 같은 Anthropic 호환 클라이언트 | Claude 스타일 요청을 Azure OpenAI Chat Completions로 변환 |
+| `claude-to-gpt` | Claude 스타일 클라이언트를 GPT 배포로 연결하고 싶을 때 | Claude Code, Roo Code, 내부 도구 같은 Anthropic 호환 클라이언트 | Claude 스타일 요청을 Azure OpenAI 요청으로 변환하고, 배포에 따라 Chat Completions 또는 Responses로 전달 |
 | `model-router` | Azure가 최적 모델을 고르게 하고 싶을 때 | 작업 성격이 자주 바뀌는 Anthropic 호환 클라이언트 | Azure `model-router`로 전달하고 최종 모델 선택은 Azure에 위임 |
 
 ## 실행
@@ -664,7 +667,8 @@ Use this when you want Roo Code to send OpenAI-style requests through the proxy.
 ### 모델 기반 재라우팅
 
 - Anthropic 형식 요청이라도 모델이 `openAIModels`에 포함되면 OpenAI 형식으로 변환 후 Azure OpenAI 쪽으로 재라우팅됩니다.
-- `claude-to-gpt`와 `model-router`는 이 재라우팅 규칙을 프로필로 확장한 예시입니다.
+- 기본 `gpt-*` 요청은 이 규칙으로 그대로 Azure OpenAI 쪽으로 가고, `claude-to-gpt`는 여기에 Claude → GPT 매핑을 추가합니다.
+- `model-router`는 같은 재라우팅 규칙을 `model-router` deployment까지 확장하는 예시입니다.
 
 ### Responses API 처리
 
@@ -672,10 +676,23 @@ Use this when you want Roo Code to send OpenAI-style requests through the proxy.
 - 그 외 모델은 Responses API request를 Chat Completions request로 바꾸고, 응답도 다시 Responses 형식으로 복원합니다.
 - 스트리밍 시에는 SSE event shape도 client-compatible format으로 다시 변환됩니다.
 
+### `claude-to-gpt` 세부 변환
+
+- `claude-to-gpt` 프로필에서 `claude-opus-4-6`은 기본 예시 기준 `gpt-5.4-pro`로 매핑되며, 이 배포가 `nativeResponsesModels`에 있으면 `/openai/v1/responses` 경로를 사용합니다.
+- 같은 프로필에서 `claude-sonnet-4-6`은 `gpt-5.4`로 매핑되며, `nativeResponsesModels`에 없으면 `/chat/completions` 경로를 사용합니다.
+- Anthropic `system`은 먼저 OpenAI chat `messages[].role="system"`으로 정규화되고, Responses 경로에서는 다시 `instructions`로 옮겨집니다.
+- Anthropic `tool_use`는 OpenAI chat `tool_calls`로 정규화된 뒤, Responses 경로에서는 `function_call` item으로 변환됩니다.
+- Anthropic `tool_result`는 OpenAI chat `tool` message로 정규화된 뒤, Responses 경로에서는 `function_call_output` item으로 변환됩니다.
+- Responses 경로에서 `user` 텍스트는 `input_text`, `assistant` 텍스트는 `output_text`, 사용자 이미지 입력은 `input_image`로 변환됩니다.
+- Anthropic `metadata.user_id`가 OpenAI `user`로 이어질 때, Native Responses 경로에서는 Azure 제한에 맞춰 길이 64자 이하만 유지하고 더 긴 값은 드롭합니다.
+- 출력 토큰 필드는 경로에 따라 달라집니다. Chat Completions 경로는 `max_completion_tokens`, native Responses 경로는 `max_output_tokens`를 사용합니다.
+- upstream 응답도 경로에 맞게 복원됩니다. Chat Completions 응답은 Anthropic message/SSE로, native Responses 응답도 Anthropic message/SSE로 다시 변환됩니다.
+
 ### 추가 호환성 처리
 
 - Azure 미지원 파라미터 제거
-- `max_tokens` → `max_completion_tokens` 변환
+- `max_tokens` → `max_completion_tokens` 또는 `max_output_tokens` 변환
+- Native Responses 경로에서 64자를 넘는 `user` 값 드롭
 - `anthropic-beta` 필터링
 - `tool_use` / `tool_result` 보정
 - Azure 에러를 Anthropic 에러 형식으로 정규화
@@ -735,7 +752,8 @@ azure-openai-proxy/
 │   │   ├── headers.mjs
 │   │   ├── anthropic-to-openai.mjs
 │   │   ├── openai-to-anthropic.mjs
-│   │   └── responses-to-chat.mjs
+│   │   ├── responses-to-chat.mjs
+│   │   └── responses-to-anthropic.mjs
 │   └── utils/
 │       └── logger.mjs
 ├── scripts/
@@ -753,6 +771,7 @@ azure-openai-proxy/
 │   └── build-exe.bat
 ├── test/
 │   ├── model-profile.test.mjs
+│   ├── request-conversion.test.mjs
 │   ├── response-conversion.test.mjs
 │   └── retry-strategy.test.mjs
 └── dist/
@@ -767,6 +786,7 @@ azure-openai-proxy/
 - [src/proxy.mjs](./src/proxy.mjs) - upstream transport, retry logic, response conversion
 - [src/transformers/body.mjs](./src/transformers/body.mjs) - body normalization, message sanitation, token field mapping
 - [src/transformers/responses-to-chat.mjs](./src/transformers/responses-to-chat.mjs) - Responses API compatibility layer
+- [src/transformers/responses-to-anthropic.mjs](./src/transformers/responses-to-anthropic.mjs) - native Responses → Anthropic response/SSE conversion
 - [config.yaml](./config.yaml) - deployment mapping and model profiles
 - [scripts/start.sh](./scripts/start.sh) - POSIX foreground launcher
 - [scripts/proxy-shell.sh](./scripts/proxy-shell.sh) - POSIX interactive shell launcher

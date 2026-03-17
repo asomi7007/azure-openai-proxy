@@ -3,6 +3,7 @@ import http from 'node:http';
 import { log, logError } from './utils/logger.mjs';
 import { convertResponseChatToResponses, createResponsesStreamTransformer } from './transformers/responses-to-chat.mjs';
 import { convertOpenAIToAnthropic, OpenAIToAnthropicStreamTransformer } from './transformers/openai-to-anthropic.mjs';
+import { convertResponsesToAnthropic, ResponsesToAnthropicStreamTransformer } from './transformers/responses-to-anthropic.mjs';
 
 /**
  * Convert an Azure-style error payload into an Anthropic-style error envelope.
@@ -185,8 +186,10 @@ function tryApplyFailover(targetUrl, bodyObj, config = {}, retryMeta = {}) {
  * @param {boolean} isResponsesApi - Whether this is a Responses API request
  * @param {string} responsesApiModel - Responses API model name
  * @param {boolean} originalClientRoute - Original client route (for response conversion)
+ * @param {string} upstreamModelHint - Best-known upstream model/deployment name for response conversion
+ * @param {boolean} upstreamIsResponses - Whether the upstream response format is native Responses
  */
-export function proxyRequest(clientReq, clientRes, targetUrl, headers, bodyBuffer, isStreaming, isAnthropicRoute = false, isResponsesApi = false, responsesApiModel = '', originalClientRoute = false, config = {}, _retryCount = 0, _retryMeta = { usedFailoverKeys: new Set() }) {
+export function proxyRequest(clientReq, clientRes, targetUrl, headers, bodyBuffer, isStreaming, isAnthropicRoute = false, isResponsesApi = false, responsesApiModel = '', originalClientRoute = false, upstreamModelHint = '', config = {}, upstreamIsResponses = false, _retryCount = 0, _retryMeta = { usedFailoverKeys: new Set() }) {
   const url = new URL(targetUrl);
   const isHttps = url.protocol === 'https:';
   const transport = isHttps ? https : http;
@@ -272,7 +275,9 @@ export function proxyRequest(clientReq, clientRes, targetUrl, headers, bodyBuffe
                 isResponsesApi,
                 responsesApiModel,
                 originalClientRoute,
+                upstreamModelHint,
                 config,
+                upstreamIsResponses,
                 _retryCount + 1,
                 _retryMeta,
               );
@@ -280,7 +285,7 @@ export function proxyRequest(clientReq, clientRes, targetUrl, headers, bodyBuffe
             return;
           }
 
-          if (isAnthropicRoute) {
+          if (isAnthropicRoute || originalClientRoute) {
             const anthropicError = toAnthropicError(statusCode, bodyStr);
             log('PROXY', `Converted to Anthropic error format`);
             const errorBuf = Buffer.from(anthropicError, 'utf-8');
@@ -297,7 +302,7 @@ export function proxyRequest(clientReq, clientRes, targetUrl, headers, bodyBuffe
 
         // Rebuild a Responses-compatible payload when the upstream answered with Chat Completions.
         // upstream가 Chat Completions로 응답한 경우 Responses 호환 payload로 다시 구성합니다.
-        if (isResponsesApi && statusCode === 200) {
+        if (isResponsesApi && statusCode === 200 && !upstreamIsResponses) {
           try {
             const chatBody = JSON.parse(bodyStr);
             const model = chatBody.model || '';
@@ -320,15 +325,27 @@ export function proxyRequest(clientReq, clientRes, targetUrl, headers, bodyBuffe
 
         // Preserve the original client contract when an Anthropic-style client was rerouted to OpenAI.
         // originalClientRoute가 true면 Anthropic 호환 클라이언트 계약을 유지하도록 응답도 Anthropic 형식으로 복원합니다.
-        if (originalClientRoute && statusCode === 200 && !isResponsesApi) {
+        if (originalClientRoute && statusCode === 200) {
           try {
-            const openaiBody = JSON.parse(bodyStr);
-            if (openaiBody.model) {
-              log('PROXY', `Selected model: ${openaiBody.model}`);
+            const upstreamBody = JSON.parse(bodyStr);
+            if (upstreamBody.model) {
+              log('PROXY', `Selected model: ${upstreamBody.model}`);
             }
-            // OpenAI 응답 포맷 확인 (choices 필드)
-            if (openaiBody.choices) {
-              const anthropicBody = convertOpenAIToAnthropic(openaiBody);
+
+            if (upstreamIsResponses || upstreamBody.output) {
+              const anthropicBody = convertResponsesToAnthropic(upstreamBody);
+              const convertedStr = JSON.stringify(anthropicBody);
+              log('PROXY', `Responses→Anthropic (non-stream) converted`);
+              const convertedBuf = Buffer.from(convertedStr, 'utf-8');
+              if (!clientRes.headersSent) {
+                clientRes.writeHead(statusCode, { ...proxyRes.headers, 'content-type': 'application/json', 'content-length': String(convertedBuf.length) });
+              }
+              clientRes.end(convertedBuf);
+              return;
+            }
+
+            if (upstreamBody.choices) {
+              const anthropicBody = convertOpenAIToAnthropic(upstreamBody);
               const convertedStr = JSON.stringify(anthropicBody);
               log('PROXY', `OpenAI→Anthropic (non-stream) converted`);
               const convertedBuf = Buffer.from(convertedStr, 'utf-8');
@@ -353,7 +370,7 @@ export function proxyRequest(clientReq, clientRes, targetUrl, headers, bodyBuffe
         if (!clientRes.headersSent) {
           clientRes.writeHead(502, { 'content-type': 'application/json' });
         }
-        const errBody = isAnthropicRoute
+        const errBody = isAnthropicRoute || originalClientRoute
           ? JSON.stringify({ type: 'error', error: { type: 'proxy_error', message: err.message } })
           : JSON.stringify({ error: 'proxy_response_error', message: err.message });
         clientRes.end(errBody);
@@ -363,7 +380,7 @@ export function proxyRequest(clientReq, clientRes, targetUrl, headers, bodyBuffe
 
     // Streaming responses either go through a compatibility transformer or pass straight through.
     // 스트리밍 응답은 호환 레이어 변환을 거치거나, 필요 없으면 그대로 전달합니다.
-    if (isResponsesApi) {
+    if (isResponsesApi && !upstreamIsResponses) {
       log('PROXY', `Stream (Responses API SSE transform)`);
       const responseHeaders = { ...proxyRes.headers };
       delete responseHeaders['content-length'];
@@ -390,12 +407,16 @@ export function proxyRequest(clientReq, clientRes, targetUrl, headers, bodyBuffe
     // Streaming OpenAI → Anthropic 변환
     // originalClientRoute가 true면 client는 Anthropic 형식 요청 → response도 Anthropic 형식으로 변환
     if (originalClientRoute) {
-      log('PROXY', `Stream (OpenAI→Anthropic SSE transform)`);
+      log('PROXY', upstreamIsResponses
+        ? 'Stream (Responses→Anthropic SSE transform)'
+        : 'Stream (OpenAI→Anthropic SSE transform)');
       const responseHeaders = { ...proxyRes.headers };
       delete responseHeaders['content-length'];
       clientRes.writeHead(statusCode, responseHeaders);
 
-      const transformer = new OpenAIToAnthropicStreamTransformer();
+      const transformer = upstreamIsResponses
+        ? new ResponsesToAnthropicStreamTransformer(upstreamModelHint)
+        : new OpenAIToAnthropicStreamTransformer();
       let selectedModelLogged = false;
       proxyRes.on('data', (chunk) => {
         const transformed = transformer.transform(chunk);
@@ -409,7 +430,9 @@ export function proxyRequest(clientReq, clientRes, targetUrl, headers, bodyBuffe
         const flushed = transformer.flush();
         if (flushed) clientRes.write(flushed);
         clientRes.end();
-        log('PROXY', 'Stream done (OpenAI→Anthropic)');
+        log('PROXY', upstreamIsResponses
+          ? 'Stream done (Responses→Anthropic)'
+          : 'Stream done (OpenAI→Anthropic)');
       });
       proxyRes.on('error', (err) => {
         logError('PROXY', `Response stream error: ${err.message}`);

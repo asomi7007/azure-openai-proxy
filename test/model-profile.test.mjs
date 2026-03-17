@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { isOpenAIModel } from '../src/transformers/anthropic-to-openai.mjs';
 import { transformBody } from '../src/transformers/body.mjs';
+import { resolveResponsesApiModel } from '../src/server.mjs';
 
 function loadConfigWithProfile(profileName) {
   process.env.PROXY_MODEL_PROFILE = profileName;
@@ -22,6 +23,7 @@ test('claude-to-gpt profile overrides Claude model mapping', async () => {
   assert.equal(config.modelNameMap['claude-sonnet-4-6'], 'gpt-5.4');
   assert.ok(config.openAIModels.includes('gpt-5.4-pro'));
   assert.ok(config.openAIModels.includes('gpt-5.4'));
+  assert.ok(config.nativeResponsesModels.includes('gpt-5.4-pro'));
 });
 
 test('claude-to-gpt profile makes Claude request routable to OpenAI', async () => {
@@ -37,6 +39,50 @@ test('claude-to-gpt profile makes Claude request routable to OpenAI', async () =
 
   assert.equal(mapped.model, 'gpt-5.4-pro');
   assert.equal(isOpenAIModel('claude-opus-4-6', config), true);
+});
+
+test('claude-to-gpt profile keeps OpenAI-family model ids routable to Azure OpenAI', async () => {
+  const config = await loadConfigWithProfile('claude-to-gpt');
+  const openAIModels = ['gpt-5.2-chat', 'gpt-5.3-codex', 'gpt-5.4', 'gpt-5.4-pro'];
+
+  for (const model of openAIModels) {
+    const anthropicMapped = transformBody(
+      {
+        model,
+        messages: [{ role: 'user', content: 'hi' }],
+      },
+      true,
+      config,
+    ).body;
+
+    const openAIMapped = transformBody(
+      {
+        model,
+        messages: [{ role: 'user', content: 'hi' }],
+      },
+      false,
+      config,
+    ).body;
+
+    assert.equal(anthropicMapped.model, model);
+    assert.equal(openAIMapped.model, model);
+    assert.equal(isOpenAIModel(model, config), true);
+  }
+});
+
+test('OpenAI native codex alias resolves to the Azure codex deployment', async () => {
+  const config = await loadConfigWithProfile('default');
+  const mapped = transformBody(
+    {
+      model: 'gpt-5.1-codex-max',
+      messages: [{ role: 'user', content: 'hi' }],
+    },
+    false,
+    config,
+  ).body;
+
+  assert.equal(mapped.model, 'gpt-5.3-codex');
+  assert.equal(isOpenAIModel('gpt-5.1-codex-max', config), true);
 });
 
 test('model-router profile maps Claude requests to model-router deployment', async () => {
@@ -83,6 +129,24 @@ test('OpenAI route converts max_tokens to max_completion_tokens', async () => {
   ).body;
 
   assert.equal(mapped.max_completion_tokens, 512);
+  assert.equal(mapped.max_tokens, undefined);
+});
+
+test('Native Responses route converts max_tokens to max_output_tokens', async () => {
+  const config = await loadConfigWithProfile('default');
+  const mapped = transformBody(
+    {
+      model: 'gpt-5.3-codex',
+      input: 'hi',
+      max_tokens: 512,
+    },
+    false,
+    config,
+    { outputTokenField: 'max_output_tokens' },
+  ).body;
+
+  assert.equal(mapped.max_output_tokens, 512);
+  assert.equal(mapped.max_completion_tokens, undefined);
   assert.equal(mapped.max_tokens, undefined);
 });
 
@@ -142,6 +206,35 @@ test('OpenAI route sets adaptive max_completion_tokens when client omitted it', 
   assert.ok(mapped.max_completion_tokens >= 1);
 });
 
+test('Native Responses route sets adaptive max_output_tokens when client omitted it', async () => {
+  const config = await loadConfigWithProfile('default');
+  config.dynamicMaxCompletionTokens = {
+    enabled: true,
+    defaultContextWindow: 1000000,
+    modelContextWindows: { 'gpt-5.3-codex': 1000000 },
+    minOutputTokens: 1024,
+    maxOutputTokens: 32000,
+    outputToInputRatio: 1.2,
+    maxOutputShareOfContext: 0.12,
+    safetyBufferTokens: 4096,
+    charPerToken: 4,
+    applyWhenMissing: true,
+  };
+
+  const mapped = transformBody(
+    {
+      model: 'gpt-5.3-codex',
+      input: '요약해줘',
+    },
+    false,
+    config,
+    { outputTokenField: 'max_output_tokens' },
+  ).body;
+
+  assert.ok(mapped.max_output_tokens >= 1);
+  assert.equal(mapped.max_completion_tokens, undefined);
+});
+
 test('Request-type profile can raise output budget for code-heavy prompts', async () => {
   const config = await loadConfigWithProfile('default');
   config.dynamicMaxCompletionTokens = {
@@ -177,4 +270,13 @@ test('Request-type profile can raise output budget for code-heavy prompts', asyn
   ).body;
 
   assert.ok(mapped.max_completion_tokens >= 4096);
+});
+
+test('claude-to-gpt profile resolves claude-opus-4-6 to a native responses deployment', async () => {
+  const config = await loadConfigWithProfile('claude-to-gpt');
+  const resolved = resolveResponsesApiModel('claude-opus-4-6', config);
+
+  assert.equal(resolved.requestedModel, 'claude-opus-4-6');
+  assert.equal(resolved.resolvedModel, 'gpt-5.4-pro');
+  assert.equal(resolved.isNative, true);
 });

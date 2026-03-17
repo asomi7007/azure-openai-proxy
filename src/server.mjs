@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { transformBody } from './transformers/body.mjs';
 import { transformHeaders } from './transformers/headers.mjs';
 import { convertAnthropicToOpenAI, isOpenAIModel } from './transformers/anthropic-to-openai.mjs';
-import { convertRequestResponsesToChat } from './transformers/responses-to-chat.mjs';
+import { convertRequestChatToResponses, convertRequestResponsesToChat } from './transformers/responses-to-chat.mjs';
 import { proxyRequest } from './proxy.mjs';
 import { log, logError } from './utils/logger.mjs';
 
@@ -69,6 +69,21 @@ function toAzureOpenAIPath(targetPath, model, config) {
 }
 
 /**
+ * Resolve a Responses API model against the configured model map before
+ * deciding whether the request can stay on the native Responses path.
+ * Responses API native 경로 유지 여부를 판단하기 전에 모델 매핑을 먼저 해석합니다.
+ * @param {string} model
+ * @param {object} config
+ * @returns {{ requestedModel: string, resolvedModel: string, isNative: boolean }}
+ */
+export function resolveResponsesApiModel(model, config) {
+  const requestedModel = model || '';
+  const resolvedModel = config.modelNameMap?.[requestedModel] ?? requestedModel;
+  const isNative = !!resolvedModel && config.nativeResponsesModels?.includes(resolvedModel);
+  return { requestedModel, resolvedModel, isNative };
+}
+
+/**
  * Create the main HTTP compatibility proxy server.
  * OpenAI/Anthropic 호환 요청을 Azure 대상으로 중계하는 메인 HTTP 서버를 생성합니다.
  * @param {object} config - Configuration object
@@ -124,6 +139,9 @@ export function createProxyServer(config) {
       let isResponsesApi = false; // Responses API → Chat Completions 변환 여부
       let responsesApiModel = '';
       let parsedModel = ''; // 최종 모델명 (native responses 판단용)
+      let outputTokenField = 'max_completion_tokens';
+      let upstreamModelHint = '';
+      let upstreamIsResponses = false;
 
       if (rawBody.length > 0) {
         try {
@@ -133,10 +151,20 @@ export function createProxyServer(config) {
           // 모델 기반 재라우팅은 URL 기반 초기 판정을 덮어쓸 수 있습니다.
           // Anthropic 형식 요청이라도 OpenAI 대상 모델이면 변환 후 Azure OpenAI로 보냅니다.
           if (isAnthropicRoute && isOpenAIModel(parsedBody.model, config)) {
-            log('PROXY', `Model-based reroute: ${parsedBody.model} → Azure OpenAI (Chat Completions)`);
-            parsedBody = convertAnthropicToOpenAI(parsedBody);
+            const responsesModel = resolveResponsesApiModel(parsedBody.model, config);
+            const convertedBody = convertAnthropicToOpenAI(parsedBody);
             isAnthropicRoute = false;
-            targetPath = '/openai/v1/chat/completions';
+            if (responsesModel.isNative) {
+              log('PROXY', `Model-based reroute: ${parsedBody.model} → Azure OpenAI (Native Responses)`);
+              parsedBody = convertRequestChatToResponses(convertedBody);
+              targetPath = '/openai/v1/responses';
+              outputTokenField = 'max_output_tokens';
+              upstreamIsResponses = true;
+            } else {
+              log('PROXY', `Model-based reroute: ${parsedBody.model} → Azure OpenAI (Chat Completions)`);
+              parsedBody = convertedBody;
+              targetPath = '/openai/v1/chat/completions';
+            }
           } else if (isAnthropicRoute && req.url.startsWith('/v1/messages')) {
             // /v1/messages → /anthropic/v1/messages (Azure Foundry prefix 보정)
             targetPath = '/anthropic' + req.url;
@@ -145,9 +173,13 @@ export function createProxyServer(config) {
           // Responses API requests are converted unless the target model supports a native path.
           // 대상 모델이 native Responses 경로를 지원하지 않으면 Chat Completions로 변환합니다.
           if (!isAnthropicRoute && targetPath.includes('/v1/responses') && parsedBody.input != null) {
-            const isNative = config.nativeResponsesModels?.includes(parsedBody.model);
-            if (isNative) {
-              log('PROXY', `Native Responses API: passing through as-is, model=${parsedBody.model}`);
+            const responsesModel = resolveResponsesApiModel(parsedBody.model, config);
+            if (responsesModel.isNative) {
+              outputTokenField = 'max_output_tokens';
+              if (responsesModel.requestedModel && responsesModel.requestedModel !== responsesModel.resolvedModel) {
+                log('PROXY', `Responses model resolved for native path: ${responsesModel.requestedModel} → ${responsesModel.resolvedModel}`);
+              }
+              log('PROXY', `Native Responses API: passing through as-is, model=${responsesModel.resolvedModel}`);
             } else {
               isResponsesApi = true;
               responsesApiModel = parsedBody.model || '';
@@ -160,11 +192,12 @@ export function createProxyServer(config) {
           log('DEBUG', `Request: model=${parsedBody.model}, stream=${parsedBody.stream}, messages=${parsedBody.messages?.length ?? 0}, system=${typeof parsedBody.system}`);
 
           // Transform body (모델명 매핑, cache_control 제거, sanitize 등)
-          const result = transformBody(parsedBody, isAnthropicRoute, config);
+          const result = transformBody(parsedBody, isAnthropicRoute, config, { outputTokenField });
           parsedBody = result.body;
           isStreaming = result.isStreaming;
 
           parsedModel = parsedBody.model || '';
+          upstreamModelHint = parsedModel;
           const isNativeResp = config.nativeResponsesModels?.includes(parsedModel) && targetPath.includes('/v1/responses');
 
           // OpenAI 라우트: Azure 배포 URL로 변환
@@ -227,7 +260,7 @@ export function createProxyServer(config) {
 
       // Proxy the request
       // originalClientRoute 전달: response conversion은 원래 client route 기준으로 결정
-      proxyRequest(req, res, targetUrl, transformedHeaders, bodyBuffer, isStreaming, isAnthropicRoute, isResponsesApi, responsesApiModel, originalClientRoute, config);
+      proxyRequest(req, res, targetUrl, transformedHeaders, bodyBuffer, isStreaming, isAnthropicRoute, isResponsesApi, responsesApiModel, originalClientRoute, upstreamModelHint, config, upstreamIsResponses);
     } catch (err) {
       logError('SERVER', `Unhandled error: ${err.message}`);
       logError('SERVER', `Stack: ${err.stack}`);

@@ -208,7 +208,7 @@ function selectRequestTypeRule(body, estimatedInputTokens, adaptive) {
   return null;
 }
 
-function applyAdaptiveMaxCompletionTokens(body, config) {
+function applyAdaptiveMaxTokens(body, config, outputTokenField = 'max_completion_tokens') {
   const adaptive = config.dynamicMaxCompletionTokens;
   if (!adaptive || adaptive.enabled === false) return;
 
@@ -241,7 +241,7 @@ function applyAdaptiveMaxCompletionTokens(body, config) {
   const ratioTarget = Math.ceil(estimatedInputTokens * outputToInputRatio);
   const recommended = Math.min(hardUpperBound, Math.max(minOutputTokens, ratioTarget));
 
-  const requested = Number(body.max_completion_tokens);
+  const requested = Number(body[outputTokenField]);
   let nextValue = null;
 
   if (Number.isFinite(requested) && requested > 0) {
@@ -253,12 +253,33 @@ function applyAdaptiveMaxCompletionTokens(body, config) {
   if (!Number.isFinite(nextValue) || nextValue <= 0) return;
   if (Number.isFinite(requested) && requested === nextValue) return;
 
-  body.max_completion_tokens = nextValue;
+  body[outputTokenField] = nextValue;
   const ruleLabel = matchedRule?.name ? `, rule=${matchedRule.name}` : '';
   if (Number.isFinite(requested) && requested > 0) {
-    log('PROXY', `Adaptive max_completion_tokens: ${requested} -> ${nextValue} (input~${estimatedInputTokens}t, model=${model || 'unknown'}${ruleLabel})`);
+    log('PROXY', `Adaptive ${outputTokenField}: ${requested} -> ${nextValue} (input~${estimatedInputTokens}t, model=${model || 'unknown'}${ruleLabel})`);
   } else {
-    log('PROXY', `Adaptive max_completion_tokens set: ${nextValue} (input~${estimatedInputTokens}t, model=${model || 'unknown'}${ruleLabel})`);
+    log('PROXY', `Adaptive ${outputTokenField} set: ${nextValue} (input~${estimatedInputTokens}t, model=${model || 'unknown'}${ruleLabel})`);
+  }
+}
+
+function normalizeOutputTokenField(body, outputTokenField) {
+  const alternateField = outputTokenField === 'max_output_tokens'
+    ? 'max_completion_tokens'
+    : 'max_output_tokens';
+
+  if (body.max_tokens != null && body[outputTokenField] == null) {
+    body[outputTokenField] = body.max_tokens;
+    delete body.max_tokens;
+    log('PROXY', `Converted max_tokens → ${outputTokenField}: ${body[outputTokenField]}`);
+  }
+
+  if (body[alternateField] != null && body[outputTokenField] == null) {
+    body[outputTokenField] = body[alternateField];
+    log('PROXY', `Converted ${alternateField} → ${outputTokenField}: ${body[outputTokenField]}`);
+  }
+
+  if (body[alternateField] != null) {
+    delete body[alternateField];
   }
 }
 
@@ -268,9 +289,12 @@ function applyAdaptiveMaxCompletionTokens(body, config) {
  * @param {object} body - Parsed JSON body
  * @param {boolean} isAnthropicRoute - Whether this is an Anthropic route
  * @param {object} config - Configuration object
+ * @param {{ outputTokenField?: 'max_completion_tokens'|'max_output_tokens' }} [options]
  * @returns {{ body: object, isStreaming: boolean }} Transformed body and streaming flag
  */
-export function transformBody(body, isAnthropicRoute, config) {
+export function transformBody(body, isAnthropicRoute, config, options = {}) {
+  const outputTokenField = options.outputTokenField || 'max_completion_tokens';
+
   // Remove unsupported parameters (방어: config.unsupportedParams가 배열인지 확인)
   const unsupportedParams = Array.isArray(config.unsupportedParams) ? config.unsupportedParams : [];
   for (const param of unsupportedParams) {
@@ -297,15 +321,8 @@ export function transformBody(body, isAnthropicRoute, config) {
       body.messages = sanitizeMessages(body.messages);
     }
   } else {
-    // OpenAI 라우트: max_tokens → max_completion_tokens 변환
-    // Azure OpenAI API는 max_tokens 대신 max_completion_tokens 사용
-    if (body.max_tokens != null && body.max_completion_tokens == null) {
-      body.max_completion_tokens = body.max_tokens;
-      delete body.max_tokens;
-      log('PROXY', `Converted max_tokens → max_completion_tokens: ${body.max_completion_tokens}`);
-    }
-
-    applyAdaptiveMaxCompletionTokens(body, config);
+    normalizeOutputTokenField(body, outputTokenField);
+    applyAdaptiveMaxTokens(body, config, outputTokenField);
   }
 
   const isStreaming = !!body.stream;

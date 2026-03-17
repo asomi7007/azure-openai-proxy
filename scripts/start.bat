@@ -1,5 +1,6 @@
 @echo off
 chcp 65001 >nul 2>&1
+setlocal EnableExtensions EnableDelayedExpansion
 :: Azure OpenAI Proxy start script
 :: Can be run from anywhere (double-click or command line)
 
@@ -7,22 +8,40 @@ title Azure OpenAI Proxy
 set "SCRIPT_DIR=%~dp0"
 set "PROJECT_DIR=%SCRIPT_DIR%.."
 set "PROFILE=%~1"
+set "PROFILE_SOURCE=command-line argument"
+set "ENV_DEFAULT_PROFILE="
 
 cd /d "%PROJECT_DIR%"
 
-if "%PROFILE%"=="" (
+if exist ".env" (
+    for /f "usebackq delims=" %%A in (`powershell -NoProfile -Command "$line = Get-Content '.env' | Where-Object { $_ -match '^PROXY_DEFAULT_PROFILE=' } | Select-Object -Last 1; if ($line) { $line.Substring(22) }"`) do set "ENV_DEFAULT_PROFILE=%%A"
+)
+
+if "!PROFILE!"=="" (
     set "PROFILE=default"
-    if exist ".env" (
-        for /f "usebackq delims=" %%A in (`powershell -NoProfile -Command "$line = Get-Content '.env' | Where-Object { $_ -match '^PROXY_DEFAULT_PROFILE=' } | Select-Object -Last 1; if ($line) { $line.Substring(22) }"`) do set "PROFILE=%%A"
+    set "PROFILE_SOURCE=built-in default"
+    if not "!ENV_DEFAULT_PROFILE!"=="" (
+        set "PROFILE=!ENV_DEFAULT_PROFILE!"
+        set "PROFILE_SOURCE=.env PROXY_DEFAULT_PROFILE"
     )
 )
-set "PROXY_MODEL_PROFILE=%PROFILE%"
+set "PROXY_MODEL_PROFILE=!PROFILE!"
 
 echo.
 echo ========================================
 echo   Azure OpenAI Proxy - Starting...
 echo ========================================
-echo   Active Profile: %PROXY_MODEL_PROFILE%
+echo   Active Profile: !PROXY_MODEL_PROFILE!
+if exist ".env" (
+    if not "!ENV_DEFAULT_PROFILE!"=="" (
+        echo   Saved Default Profile from .env: !ENV_DEFAULT_PROFILE!
+    ) else (
+        echo   Saved Default Profile from .env: not set
+    )
+) else (
+    echo   Saved Default Profile from .env: .env not found
+)
+echo   Profile Source: !PROFILE_SOURCE!
 echo.
 
 :: Check if node is available

@@ -228,8 +228,9 @@ Expected response:
 
 ### 2) Claude API → Azure GPT deployment
 
-- Accepts Claude-style API requests and converts them into OpenAI Chat Completions requests
+- Accepts Claude-style API requests, converts them into OpenAI-shaped requests, and forwards them through Chat Completions or Responses depending on the target deployment
 - Uses the `claude-to-gpt` profile to map Claude model requests to Azure GPT deployments
+- Requests that already arrive with OpenAI-family model IDs such as `gpt-*` are still normalized through the same `modelNameMap` onto Azure OpenAI deployments
 - Lets an Anthropic-compatible client talk to GPT-family deployments without changing client protocol
 
 ### 3) Claude API → Azure model-router deployment
@@ -329,6 +330,7 @@ modelNameMap:
 
 nativeResponsesModels:
   - gpt-5.3-codex
+  - gpt-5.4-pro
 
 completionsModels: []
 
@@ -386,7 +388,8 @@ Environment overrides:
 ### `claude-to-gpt`
 
 - Remaps Claude model requests to Azure GPT deployments
-- Converts Anthropic-style requests into OpenAI Chat Completions requests
+- Converts Anthropic-style requests into OpenAI-shaped requests and then uses Chat Completions or Responses depending on the target deployment
+- Keeps OpenAI-family model requests on the same Azure OpenAI deployment mapping
 - Useful when you want a GPT backend behind an Anthropic-compatible client
 
 Run examples:
@@ -426,7 +429,7 @@ PROXY_MODEL_PROFILE=model-router npm start
 | Mode | Best for | Client pattern | Result |
 |------|------|------|------|
 | `default` | Standard Azure passthrough | OpenAI-compatible and Anthropic-compatible clients already aligned to Azure deployments | Keeps the original protocol and forwards to Azure-compatible targets |
-| `claude-to-gpt` | Claude-style clients that should use GPT deployments | Anthropic-compatible clients such as Claude Code, Roo Code, or internal tools | Converts Claude-style requests into Azure OpenAI Chat Completions |
+| `claude-to-gpt` | Claude-style clients that should use GPT deployments | Anthropic-compatible clients such as Claude Code, Roo Code, or internal tools | Converts Claude-style requests into Azure OpenAI requests and then uses Chat Completions or Responses depending on the deployment |
 | `model-router` | Claude-style clients that should let Azure choose the best model | Anthropic-compatible clients with variable workload patterns | Sends requests to Azure `model-router` and delegates final model choice to Azure |
 
 ## Running
@@ -607,7 +610,8 @@ set OPENAI_API_KEY=azure-proxy-key
 ### Model-based rerouting
 
 - Even if the incoming request is Anthropic-compatible, it is rerouted to Azure OpenAI when the resolved model is listed in `openAIModels`.
-- `claude-to-gpt` and `model-router` are profile-based examples of this rerouting behavior.
+- Base `gpt-*` requests already follow this rule into Azure OpenAI, and `claude-to-gpt` extends it by adding Claude-to-GPT remapping.
+- `model-router` extends the same rerouting rule to the `model-router` deployment.
 
 ### Responses API handling
 
@@ -615,10 +619,23 @@ set OPENAI_API_KEY=azure-proxy-key
 - Other models convert Responses API requests into Chat Completions requests and then reshape the response back into Responses format.
 - Streaming responses also rewrite SSE events into a client-compatible shape.
 
+### `claude-to-gpt` detailed conversion
+
+- Under the default sample profile, `claude-opus-4-6` resolves to `gpt-5.4-pro`, and when that deployment is listed in `nativeResponsesModels` the proxy uses `/openai/v1/responses`.
+- Under the same profile, `claude-sonnet-4-6` resolves to `gpt-5.4`, and when that deployment is not listed in `nativeResponsesModels` the proxy uses `/chat/completions`.
+- Anthropic `system` content is first normalized into OpenAI chat `messages[].role="system"` and then moved into `instructions` on the native Responses path.
+- Anthropic `tool_use` blocks are normalized into OpenAI chat `tool_calls`, and on the native Responses path they become `function_call` items.
+- Anthropic `tool_result` blocks are normalized into OpenAI chat `tool` messages, and on the native Responses path they become `function_call_output` items.
+- On the native Responses path, `user` text becomes `input_text`, `assistant` text becomes `output_text`, and user image inputs become `input_image`.
+- When Anthropic `metadata.user_id` is forwarded into OpenAI `user`, the native Responses path keeps it only when it is 64 characters or shorter; longer values are dropped for Azure compatibility.
+- Output token fields are route-specific. Chat Completions uses `max_completion_tokens`, while the native Responses path uses `max_output_tokens`.
+- Upstream responses are restored to the client contract as well. Chat Completions responses are converted back into Anthropic message/SSE shapes, and native Responses replies are also converted back into Anthropic message/SSE shapes.
+
 ### Additional compatibility handling
 
 - Removes Azure-unsupported parameters
-- Converts `max_tokens` into `max_completion_tokens`
+- Converts `max_tokens` into `max_completion_tokens` or `max_output_tokens`
+- Drops overlong `user` values on the native Responses path
 - Filters unsupported `anthropic-beta` headers
 - Repairs `tool_use` / `tool_result` sequences
 - Normalizes Azure errors into Anthropic-style error envelopes
@@ -678,7 +695,8 @@ azure-openai-proxy/
 │   │   ├── headers.mjs
 │   │   ├── anthropic-to-openai.mjs
 │   │   ├── openai-to-anthropic.mjs
-│   │   └── responses-to-chat.mjs
+│   │   ├── responses-to-chat.mjs
+│   │   └── responses-to-anthropic.mjs
 │   └── utils/
 │       └── logger.mjs
 ├── scripts/
@@ -696,6 +714,7 @@ azure-openai-proxy/
 │   └── build-exe.bat
 ├── test/
 │   ├── model-profile.test.mjs
+│   ├── request-conversion.test.mjs
 │   ├── response-conversion.test.mjs
 │   └── retry-strategy.test.mjs
 └── dist/
@@ -710,6 +729,7 @@ azure-openai-proxy/
 - [src/proxy.mjs](./src/proxy.mjs) - upstream transport, retry logic, response conversion
 - [src/transformers/body.mjs](./src/transformers/body.mjs) - body normalization, message sanitation, token field mapping
 - [src/transformers/responses-to-chat.mjs](./src/transformers/responses-to-chat.mjs) - Responses API compatibility layer
+- [src/transformers/responses-to-anthropic.mjs](./src/transformers/responses-to-anthropic.mjs) - native Responses to Anthropic response/SSE conversion
 - [config.yaml](./config.yaml) - deployment mapping and model profiles
 - [scripts/start.sh](./scripts/start.sh) - POSIX foreground launcher
 - [scripts/proxy-shell.sh](./scripts/proxy-shell.sh) - POSIX interactive shell launcher

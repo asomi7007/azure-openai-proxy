@@ -27,6 +27,9 @@ modelNameMap:
   claude-haiku-4-5-20251001: claude-sonnet-4-5
   # GPT
   gpt-5.2-chat: gpt-5.2-chat
+  # Roo/OpenAI native alias observed in live requests → Azure codex deployment
+  # Roo/OpenAI native 요청에서 관찰된 alias → Azure codex 배포
+  gpt-5.1-codex-max: gpt-5.3-codex
   gpt-5.3-codex: gpt-5.3-codex
   gpt-5.4: gpt-5.4
   gpt-5.4-pro: gpt-5.4-pro
@@ -37,6 +40,7 @@ modelNameMap:
 # api-version으로 openAIResponsesApiVersion을 사용합니다.
 nativeResponsesModels:
   - gpt-5.3-codex
+  - gpt-5.4-pro
 
 # Models that must use the /completions endpoint instead of /chat/completions.
 # /chat/completions 대신 /completions endpoint를 사용해야 하는 모델입니다.
@@ -141,6 +145,8 @@ modelProfiles:
       # Claude 형식 요청도 Azure OpenAI GPT 배포로 강제 매핑합니다.
       claude-opus-4-6: gpt-5.4-pro
       claude-sonnet-4-6: gpt-5.4
+      # OpenAI-family model IDs still follow the shared Azure OpenAI deployment mapping.
+      # OpenAI 계열 모델 ID도 공통 Azure OpenAI 배포 매핑을 그대로 따릅니다.
     # Treat these resolved models as Azure OpenAI targets even for Anthropic-compatible input.
     # Anthropic 호환 입력이라도 이 리스트 모델로 해석되면 Azure OpenAI 경로로 자동 전환합니다.
     openAIModels:

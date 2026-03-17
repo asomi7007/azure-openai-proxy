@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { convertOpenAIToAnthropic, OpenAIToAnthropicStreamTransformer } from '../src/transformers/openai-to-anthropic.mjs';
+import { convertResponsesToAnthropic, ResponsesToAnthropicStreamTransformer } from '../src/transformers/responses-to-anthropic.mjs';
+
+function sseEvent(...lines) {
+  return `${lines.join('\n')}\n\n`;
+}
 
 test('OpenAI response converts to Anthropic format', () => {
   const openaiResp = {
@@ -118,6 +123,133 @@ test('Streaming transformer converts tool_calls correctly', () => {
   ];
 
   const output = chunks.map(c => transformer.transform(Buffer.from(c))).filter(Boolean).join('');
+
+  assert.ok(output.includes('message_start'), 'should have message_start');
+  assert.ok(output.includes('tool_use'), 'should have tool_use block');
+  assert.ok(output.includes('"bash"'), 'should have tool name');
+  assert.ok(output.includes('input_json_delta'), 'should have input_json_delta');
+  assert.ok(output.includes('content_block_stop'), 'should have content_block_stop');
+  assert.ok(output.includes('"tool_use"'), 'should have tool_use stop_reason');
+  assert.ok(output.includes('message_stop'), 'should have message_stop');
+});
+
+test('Responses response converts to Anthropic format', () => {
+  const responsesBody = {
+    id: 'resp_123',
+    object: 'response',
+    model: 'gpt-5.4-pro',
+    output: [
+      {
+        type: 'message',
+        id: 'msg_123',
+        role: 'assistant',
+        content: [{ type: 'output_text', text: 'Hello from Responses', annotations: [] }],
+        status: 'completed',
+      },
+      {
+        type: 'function_call',
+        id: 'fc_123',
+        call_id: 'call_xyz',
+        name: 'read_file',
+        arguments: '{"path":"README.md"}',
+        status: 'completed',
+      },
+    ],
+    usage: {
+      input_tokens: 12,
+      output_tokens: 18,
+    },
+  };
+
+  const anthropicResp = convertResponsesToAnthropic(responsesBody);
+
+  assert.equal(anthropicResp.type, 'message');
+  assert.equal(anthropicResp.content[0].type, 'text');
+  assert.equal(anthropicResp.content[0].text, 'Hello from Responses');
+  assert.equal(anthropicResp.content[1].type, 'tool_use');
+  assert.equal(anthropicResp.content[1].id, 'call_xyz');
+  assert.equal(anthropicResp.content[1].name, 'read_file');
+  assert.deepEqual(anthropicResp.content[1].input, { path: 'README.md' });
+  assert.equal(anthropicResp.stop_reason, 'tool_use');
+  assert.equal(anthropicResp.usage.input_tokens, 12);
+  assert.equal(anthropicResp.usage.output_tokens, 18);
+});
+
+test('Responses streaming transformer converts text chunks correctly', () => {
+  const transformer = new ResponsesToAnthropicStreamTransformer();
+  const chunks = [
+    sseEvent(
+      'event: response.created',
+      'data: {"type":"response.created","response":{"id":"resp_1","model":"gpt-5.4-pro","status":"in_progress","output":[]}}',
+    ),
+    sseEvent(
+      'event: response.output_item.added',
+      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_1","role":"assistant","content":[],"status":"in_progress"}}',
+    ),
+    sseEvent(
+      'event: response.content_part.added',
+      'data: {"type":"response.content_part.added","item_id":"msg_1","output_index":0,"content_index":0,"part":{"type":"output_text","text":"","annotations":[]}}',
+    ),
+    sseEvent(
+      'event: response.output_text.delta',
+      'data: {"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":"Hello"}',
+    ),
+    sseEvent(
+      'event: response.output_text.delta',
+      'data: {"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":" world"}',
+    ),
+    sseEvent(
+      'event: response.output_item.done',
+      'data: {"type":"response.output_item.done","output_index":0,"item":{"type":"message","id":"msg_1","role":"assistant","content":[{"type":"output_text","text":"Hello world","annotations":[]}],"status":"completed"}}',
+    ),
+    sseEvent(
+      'event: response.completed',
+      'data: {"type":"response.completed","response":{"id":"resp_1","model":"gpt-5.4-pro","status":"completed","output":[],"usage":{"input_tokens":10,"output_tokens":15}}}',
+    ),
+  ];
+
+  const output = chunks.map(c => transformer.transform(Buffer.from(c))).filter(Boolean).join('') + transformer.flush();
+
+  assert.ok(output.includes('message_start'), 'should have message_start');
+  assert.ok(output.includes('content_block_start'), 'should have content_block_start');
+  assert.ok(output.includes('text_delta'), 'should have text_delta');
+  assert.ok(output.includes('"Hello"'), 'should have Hello text');
+  assert.ok(output.includes('content_block_stop'), 'should have content_block_stop');
+  assert.ok(output.includes('message_delta'), 'should have message_delta');
+  assert.ok(output.includes('"end_turn"'), 'should have end_turn stop_reason');
+  assert.ok(output.includes('message_stop'), 'should have message_stop');
+});
+
+test('Responses streaming transformer converts function calls correctly', () => {
+  const transformer = new ResponsesToAnthropicStreamTransformer();
+  const chunks = [
+    sseEvent(
+      'event: response.created',
+      'data: {"type":"response.created","response":{"id":"resp_2","model":"gpt-5.4-pro","status":"in_progress","output":[]}}',
+    ),
+    sseEvent(
+      'event: response.output_item.added',
+      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"bash","arguments":"","status":"in_progress"}}',
+    ),
+    sseEvent(
+      'event: response.function_call_arguments.delta',
+      'data: {"type":"response.function_call_arguments.delta","item_id":"fc_1","output_index":0,"call_id":"call_1","delta":"{\\"cmd\\":"}',
+    ),
+    sseEvent(
+      'event: response.function_call_arguments.delta',
+      'data: {"type":"response.function_call_arguments.delta","item_id":"fc_1","output_index":0,"call_id":"call_1","delta":"\\"ls\\"}"}',
+    ),
+    sseEvent(
+      'event: response.output_item.done',
+      'data: {"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"bash","arguments":"{\\"cmd\\":\\"ls\\"}","status":"completed"}}',
+    ),
+    sseEvent(
+      'event: response.completed',
+      'data: {"type":"response.completed","response":{"id":"resp_2","model":"gpt-5.4-pro","status":"completed","output":[],"usage":{"input_tokens":10,"output_tokens":6}}}',
+    ),
+  ];
+
+  const output = chunks.map(c => transformer.transform(Buffer.from(c))).filter(Boolean).join('') + transformer.flush();
 
   assert.ok(output.includes('message_start'), 'should have message_start');
   assert.ok(output.includes('tool_use'), 'should have tool_use block');
