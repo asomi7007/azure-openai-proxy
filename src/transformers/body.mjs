@@ -117,7 +117,7 @@ function removeCacheControl(obj) {
   return obj;
 }
 
-function estimatePromptTokens(body, charPerToken = 4) {
+export function estimatePromptTokens(body, charPerToken = 4) {
   let chars = 0;
   const divisor = Math.max(1, Number(charPerToken) || 4);
 

@@ -144,7 +144,13 @@ modelProfiles:
       # Force Claude-style requests onto Azure OpenAI GPT deployments.
       # Claude 형식 요청도 Azure OpenAI GPT 배포로 강제 매핑합니다.
       claude-opus-4-6: gpt-5.4-pro
+      claude-opus-4-5-20251101: gpt-5.4-pro
+      claude-opus-4-5-20250929: gpt-5.4-pro
       claude-sonnet-4-6: gpt-5.4
+      claude-sonnet-4-5: gpt-5.4
+      claude-sonnet-4-5-20250929: gpt-5.4
+      claude-sonnet-4-20250514: gpt-5.4
+      claude-haiku-4-5-20251001: gpt-5.4
       # OpenAI-family model IDs still follow the shared Azure OpenAI deployment mapping.
       # OpenAI 계열 모델 ID도 공통 Azure OpenAI 배포 매핑을 그대로 따릅니다.
     # Treat these resolved models as Azure OpenAI targets even for Anthropic-compatible input.

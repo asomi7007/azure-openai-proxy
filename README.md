@@ -352,7 +352,13 @@ modelProfiles:
   claude-to-gpt:
     modelNameMap:
       claude-opus-4-6: gpt-5.4-pro
+      claude-opus-4-5-20251101: gpt-5.4-pro
+      claude-opus-4-5-20250929: gpt-5.4-pro
       claude-sonnet-4-6: gpt-5.4
+      claude-sonnet-4-5: gpt-5.4
+      claude-sonnet-4-5-20250929: gpt-5.4
+      claude-sonnet-4-20250514: gpt-5.4
+      claude-haiku-4-5-20251001: gpt-5.4
     openAIModels:
       - gpt-5.4-pro
       - gpt-5.4
@@ -571,7 +577,7 @@ scripts\stop.bat
 - **OpenAI API**: `http://localhost:8081/openai`
 - **API key**: any non-empty value
 - **Profile**: current `PROXY_MODEL_PROFILE`
-- **Claude Opus / Claude Sonnet**: shown when a selected profile overrides the default mapping
+- **Claude Opus / Claude Sonnet / Claude Haiku**: shown when a selected profile overrides the default mapping
 
 ### Anthropic 호환 클라이언트
 
@@ -679,12 +685,13 @@ Use this when you want Roo Code to send OpenAI-style requests through the proxy.
 ### `claude-to-gpt` 세부 변환
 
 - `claude-to-gpt` 프로필에서 `claude-opus-4-6`은 기본 예시 기준 `gpt-5.4-pro`로 매핑되며, 이 배포가 `nativeResponsesModels`에 있으면 `/openai/v1/responses` 경로를 사용합니다.
-- 같은 프로필에서 `claude-sonnet-4-6`은 `gpt-5.4`로 매핑되며, `nativeResponsesModels`에 없으면 `/chat/completions` 경로를 사용합니다.
+- 같은 프로필에서 `claude-sonnet-4-6`, `claude-sonnet-4-5`, `claude-haiku-4-5-20251001` 같은 Claude 계열 별칭도 기본 예시 기준 `gpt-5.4`로 매핑되며, `nativeResponsesModels`에 없으면 `/chat/completions` 경로를 사용합니다.
 - Anthropic `system`은 먼저 OpenAI chat `messages[].role="system"`으로 정규화되고, Responses 경로에서는 다시 `instructions`로 옮겨집니다.
 - Anthropic `tool_use`는 OpenAI chat `tool_calls`로 정규화된 뒤, Responses 경로에서는 `function_call` item으로 변환됩니다.
 - Anthropic `tool_result`는 OpenAI chat `tool` message로 정규화된 뒤, Responses 경로에서는 `function_call_output` item으로 변환됩니다.
 - Responses 경로에서 `user` 텍스트는 `input_text`, `assistant` 텍스트는 `output_text`, 사용자 이미지 입력은 `input_image`로 변환됩니다.
 - Anthropic `metadata.user_id`가 OpenAI `user`로 이어질 때, Native Responses 경로에서는 Azure 제한에 맞춰 길이 64자 이하만 유지하고 더 긴 값은 드롭합니다.
+- Anthropic `POST /v1/messages/count_tokens`가 GPT 배포로 재라우팅되는 경우에는 Azure OpenAI에 동일한 Anthropic 토큰 카운트 endpoint가 없으므로, 프록시가 로컬 휴리스틱으로 `input_tokens`를 계산해 반환합니다.
 - 출력 토큰 필드는 경로에 따라 달라집니다. Chat Completions 경로는 `max_completion_tokens`, native Responses 경로는 `max_output_tokens`를 사용합니다.
 - upstream 응답도 경로에 맞게 복원됩니다. Chat Completions 응답은 Anthropic message/SSE로, native Responses 응답도 Anthropic message/SSE로 다시 변환됩니다.
 

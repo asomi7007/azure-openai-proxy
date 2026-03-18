@@ -25,6 +25,7 @@ function getProfileModelMappings(config) {
   const baseModelMap = [
     { label: 'Claude Opus', sourceModel: 'claude-opus-4-6', defaultTarget: 'claude-opus-4-6' },
     { label: 'Claude Sonnet', sourceModel: 'claude-sonnet-4-6', defaultTarget: 'claude-sonnet-4-6' },
+    { label: 'Claude Haiku', sourceModel: 'claude-haiku-4-5-20251001', defaultTarget: 'claude-sonnet-4-5' },
   ];
 
   return baseModelMap

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { isOpenAIModel } from '../src/transformers/anthropic-to-openai.mjs';
 import { transformBody } from '../src/transformers/body.mjs';
-import { resolveResponsesApiModel } from '../src/server.mjs';
+import { buildLocalAnthropicCountTokensResponse, resolveResponsesApiModel } from '../src/server.mjs';
 
 function loadConfigWithProfile(profileName) {
   process.env.PROXY_MODEL_PROFILE = profileName;
@@ -20,7 +20,10 @@ test('default profile keeps existing Claude mapping', async () => {
 test('claude-to-gpt profile overrides Claude model mapping', async () => {
   const config = await loadConfigWithProfile('claude-to-gpt');
   assert.equal(config.modelNameMap['claude-opus-4-6'], 'gpt-5.4-pro');
+  assert.equal(config.modelNameMap['claude-opus-4-5-20250929'], 'gpt-5.4-pro');
   assert.equal(config.modelNameMap['claude-sonnet-4-6'], 'gpt-5.4');
+  assert.equal(config.modelNameMap['claude-sonnet-4-5'], 'gpt-5.4');
+  assert.equal(config.modelNameMap['claude-haiku-4-5-20251001'], 'gpt-5.4');
   assert.ok(config.openAIModels.includes('gpt-5.4-pro'));
   assert.ok(config.openAIModels.includes('gpt-5.4'));
   assert.ok(config.nativeResponsesModels.includes('gpt-5.4-pro'));
@@ -39,6 +42,21 @@ test('claude-to-gpt profile makes Claude request routable to OpenAI', async () =
 
   assert.equal(mapped.model, 'gpt-5.4-pro');
   assert.equal(isOpenAIModel('claude-opus-4-6', config), true);
+});
+
+test('claude-to-gpt profile also reroutes haiku aliases to Azure OpenAI', async () => {
+  const config = await loadConfigWithProfile('claude-to-gpt');
+  const mapped = transformBody(
+    {
+      model: 'claude-haiku-4-5-20251001',
+      messages: [{ role: 'user', content: 'summarize this quickly' }],
+    },
+    true,
+    config,
+  ).body;
+
+  assert.equal(mapped.model, 'gpt-5.4');
+  assert.equal(isOpenAIModel('claude-haiku-4-5-20251001', config), true);
 });
 
 test('claude-to-gpt profile keeps OpenAI-family model ids routable to Azure OpenAI', async () => {
@@ -279,4 +297,35 @@ test('claude-to-gpt profile resolves claude-opus-4-6 to a native responses deplo
   assert.equal(resolved.requestedModel, 'claude-opus-4-6');
   assert.equal(resolved.resolvedModel, 'gpt-5.4-pro');
   assert.equal(resolved.isNative, true);
+});
+
+test('Anthropic count_tokens is served locally for GPT-rerouted models', async () => {
+  const config = await loadConfigWithProfile('claude-to-gpt');
+  const response = buildLocalAnthropicCountTokensResponse(
+    '/v1/messages/count_tokens?beta=true',
+    {
+      model: 'claude-opus-4-6',
+      system: 'You are terse.',
+      messages: [{ role: 'user', content: 'Count the tokens for this request.' }],
+    },
+    config,
+  );
+
+  assert.ok(response);
+  assert.equal(typeof response.input_tokens, 'number');
+  assert.ok(response.input_tokens >= 1);
+});
+
+test('Anthropic count_tokens passthrough remains enabled for non-rerouted models', async () => {
+  const config = await loadConfigWithProfile('default');
+  const response = buildLocalAnthropicCountTokensResponse(
+    '/v1/messages/count_tokens?beta=true',
+    {
+      model: 'claude-sonnet-4-6',
+      messages: [{ role: 'user', content: 'hello' }],
+    },
+    config,
+  );
+
+  assert.equal(response, null);
 });

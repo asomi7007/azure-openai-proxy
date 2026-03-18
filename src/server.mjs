@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import { transformBody } from './transformers/body.mjs';
+import { estimatePromptTokens, transformBody } from './transformers/body.mjs';
 import { transformHeaders } from './transformers/headers.mjs';
 import { convertAnthropicToOpenAI, isOpenAIModel } from './transformers/anthropic-to-openai.mjs';
 import { convertRequestChatToResponses, convertRequestResponsesToChat } from './transformers/responses-to-chat.mjs';
@@ -83,6 +83,40 @@ export function resolveResponsesApiModel(model, config) {
   return { requestedModel, resolvedModel, isNative };
 }
 
+function isAnthropicCountTokensPath(url = '') {
+  return url.includes('/v1/messages/count_tokens');
+}
+
+/**
+ * Serve Anthropic count_tokens locally when the selected profile reroutes the
+ * request into Azure OpenAI. Azure OpenAI has no Anthropic-native count_tokens
+ * endpoint, so the proxy returns the same heuristic estimate used for adaptive
+ * max token sizing instead of accidentally triggering a completion request.
+ * claude-to-gpt처럼 Azure OpenAI로 재라우팅되는 Anthropic count_tokens는
+ * 로컬에서 휴리스틱으로 계산해 반환합니다.
+ *
+ * @param {string} requestUrl
+ * @param {object} parsedBody
+ * @param {object} config
+ * @returns {{ input_tokens: number } | null}
+ */
+export function buildLocalAnthropicCountTokensResponse(requestUrl, parsedBody, config) {
+  if (!isAnthropicCountTokensPath(requestUrl)) return null;
+  if (!parsedBody || typeof parsedBody !== 'object') return null;
+  if (!isOpenAIModel(parsedBody.model, config)) return null;
+
+  const convertedBody = convertAnthropicToOpenAI(parsedBody);
+  const charPerToken = Math.max(1, Number(config.dynamicMaxCompletionTokens?.charPerToken ?? 4));
+  const inputTokens = estimatePromptTokens(convertedBody, charPerToken);
+
+  log(
+    'PROXY',
+    `Anthropic count_tokens served locally for OpenAI-rerouted model: ${parsedBody.model} → ${convertedBody.model}, input_tokens~${inputTokens}`,
+  );
+
+  return { input_tokens: inputTokens };
+}
+
 /**
  * Create the main HTTP compatibility proxy server.
  * OpenAI/Anthropic 호환 요청을 Azure 대상으로 중계하는 메인 HTTP 서버를 생성합니다.
@@ -146,6 +180,17 @@ export function createProxyServer(config) {
       if (rawBody.length > 0) {
         try {
           let parsedBody = JSON.parse(rawBody.toString('utf-8'));
+
+          const localCountTokens = buildLocalAnthropicCountTokensResponse(req.url, parsedBody, config);
+          if (localCountTokens) {
+            const responseBody = Buffer.from(JSON.stringify(localCountTokens), 'utf-8');
+            res.writeHead(200, {
+              'content-type': 'application/json',
+              'content-length': String(responseBody.length),
+            });
+            res.end(responseBody);
+            return;
+          }
 
           // Model-based rerouting can override the initial URL-based decision.
           // 모델 기반 재라우팅은 URL 기반 초기 판정을 덮어쓸 수 있습니다.

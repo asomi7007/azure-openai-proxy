@@ -350,7 +350,13 @@ modelProfiles:
   claude-to-gpt:
     modelNameMap:
       claude-opus-4-6: gpt-5.4-pro
+      claude-opus-4-5-20251101: gpt-5.4-pro
+      claude-opus-4-5-20250929: gpt-5.4-pro
       claude-sonnet-4-6: gpt-5.4
+      claude-sonnet-4-5: gpt-5.4
+      claude-sonnet-4-5-20250929: gpt-5.4
+      claude-sonnet-4-20250514: gpt-5.4
+      claude-haiku-4-5-20251001: gpt-5.4
     openAIModels:
       - gpt-5.4-pro
       - gpt-5.4
@@ -569,7 +575,7 @@ After startup, the console prints a short connection summary.
 - **OpenAI API**: `http://localhost:8081/openai`
 - **API key**: any non-empty value
 - **Profile**: current `PROXY_MODEL_PROFILE`
-- **Claude Opus / Claude Sonnet**: shown when a selected profile overrides the default mapping
+- **Claude Opus / Claude Sonnet / Claude Haiku**: shown when a selected profile overrides the default mapping
 
 ### Anthropic-compatible clients
 
@@ -622,12 +628,13 @@ set OPENAI_API_KEY=azure-proxy-key
 ### `claude-to-gpt` detailed conversion
 
 - Under the default sample profile, `claude-opus-4-6` resolves to `gpt-5.4-pro`, and when that deployment is listed in `nativeResponsesModels` the proxy uses `/openai/v1/responses`.
-- Under the same profile, `claude-sonnet-4-6` resolves to `gpt-5.4`, and when that deployment is not listed in `nativeResponsesModels` the proxy uses `/chat/completions`.
+- Under the same profile, Claude aliases such as `claude-sonnet-4-6`, `claude-sonnet-4-5`, and `claude-haiku-4-5-20251001` resolve to `gpt-5.4`, and when that deployment is not listed in `nativeResponsesModels` the proxy uses `/chat/completions`.
 - Anthropic `system` content is first normalized into OpenAI chat `messages[].role="system"` and then moved into `instructions` on the native Responses path.
 - Anthropic `tool_use` blocks are normalized into OpenAI chat `tool_calls`, and on the native Responses path they become `function_call` items.
 - Anthropic `tool_result` blocks are normalized into OpenAI chat `tool` messages, and on the native Responses path they become `function_call_output` items.
 - On the native Responses path, `user` text becomes `input_text`, `assistant` text becomes `output_text`, and user image inputs become `input_image`.
 - When Anthropic `metadata.user_id` is forwarded into OpenAI `user`, the native Responses path keeps it only when it is 64 characters or shorter; longer values are dropped for Azure compatibility.
+- When Anthropic `POST /v1/messages/count_tokens` is rerouted to a GPT deployment, Azure OpenAI has no Anthropic-native token counting endpoint, so the proxy returns a local heuristic `input_tokens` estimate instead of issuing an inference call.
 - Output token fields are route-specific. Chat Completions uses `max_completion_tokens`, while the native Responses path uses `max_output_tokens`.
 - Upstream responses are restored to the client contract as well. Chat Completions responses are converted back into Anthropic message/SSE shapes, and native Responses replies are also converted back into Anthropic message/SSE shapes.
 
