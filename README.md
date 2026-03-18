@@ -628,6 +628,18 @@ Or use the helper launcher on Windows:
 scripts\claude-code.bat
 ```
 
+To switch Claude Code settings quickly:
+
+```cmd
+claudeproxy.bat
+claudeproxy.bat status
+```
+
+- `claudeproxy.bat` toggles `env.ANTHROPIC_BASE_URL` in `C:\Users\<user>\.claude\settings.json` between the local proxy `http://localhost:8081` and the original setting.
+- `claudeproxy.bat status` prints whether the current state is `LOCAL_PROXY`, `ORIGINAL`, or `CUSTOM`.
+- Batch output messages stay in English to avoid mojibake in some Windows console code pages.
+- `scripts\start.bat` now also prompts to switch Claude Code to the local proxy before starting when it is not already local.
+
 ### Roo Code setup example
 
 #### Roo Code with Anthropic provider

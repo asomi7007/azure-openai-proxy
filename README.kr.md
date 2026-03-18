@@ -607,6 +607,18 @@ claude
 scripts\claude-code.bat
 ```
 
+Claude Code 설정을 빠르게 전환하려면:
+
+```cmd
+claudeproxy.bat
+claudeproxy.bat status
+```
+
+- `claudeproxy.bat`는 `C:\Users\<사용자>\.claude\settings.json`의 `env.ANTHROPIC_BASE_URL`을 로컬 프록시 `http://localhost:8081`와 원래 설정 사이에서 토글합니다.
+- `claudeproxy.bat status`는 현재 상태가 `LOCAL_PROXY`, `ORIGINAL`, `CUSTOM` 중 무엇인지 출력합니다.
+- 배치 출력 메시지는 Windows 콘솔 인코딩 깨짐을 피하기 위해 영어로 고정되어 있습니다.
+- `scripts\start.bat`도 시작 시 Claude Code 설정이 로컬 프록시가 아니면 변경할지 먼저 묻습니다.
+
 ### Roo Code 설정 예시
 
 #### Anthropic provider로 연결

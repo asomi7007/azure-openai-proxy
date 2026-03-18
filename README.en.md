@@ -511,6 +511,18 @@ Starts the proxy in the background, sets the required environment variables, and
 scripts\claude-code.bat
 ```
 
+To switch Claude Code settings quickly:
+
+```cmd
+claudeproxy.bat
+claudeproxy.bat status
+```
+
+- `claudeproxy.bat` toggles `env.ANTHROPIC_BASE_URL` in `C:\Users\<user>\.claude\settings.json` between the local proxy `http://localhost:8081` and the original setting.
+- `claudeproxy.bat status` prints whether the current state is `LOCAL_PROXY`, `ORIGINAL`, or `CUSTOM`.
+- Batch output messages stay in English to avoid mojibake in some Windows console code pages.
+- `scripts\start.bat` now also prompts to switch Claude Code to the local proxy before starting when it is not already local.
+
 ### Interactive proxy shell
 
 Starts the proxy in the background and opens an interactive shell with the relevant environment variables set. You can run `claude`, `roo`, or other CLI tools from that shell.

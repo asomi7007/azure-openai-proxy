@@ -10,6 +10,7 @@ set "PROJECT_DIR=%SCRIPT_DIR%.."
 set "PROFILE=%~1"
 set "PROFILE_SOURCE=command-line argument"
 set "ENV_DEFAULT_PROFILE="
+set "CLAUDE_PROXY_HELPER=%PROJECT_DIR%\scripts\claudeproxy.bat"
 
 cd /d "%PROJECT_DIR%"
 
@@ -43,6 +44,29 @@ if exist ".env" (
 )
 echo   Profile Source: !PROFILE_SOURCE!
 echo.
+
+if exist "!CLAUDE_PROXY_HELPER!" (
+    set "CLAUDE_PROXY_STATUS="
+    for /f "usebackq delims=" %%A in (`call "!CLAUDE_PROXY_HELPER!" status 2^>nul`) do set "CLAUDE_PROXY_STATUS=%%A"
+
+    if /I "!CLAUDE_PROXY_STATUS!"=="LOCAL_PROXY" (
+        echo [INFO] Claude Code setting already points to the local proxy.
+        echo.
+    ) else (
+        echo [INFO] Claude Code setting is not using the local proxy.
+        choice /C YN /M "Switch Claude Code to http://localhost:8081 before starting?"
+        if errorlevel 2 (
+            echo [INFO] Keeping the current Claude Code setting.
+            echo.
+        ) else (
+            call "!CLAUDE_PROXY_HELPER!" ensure-local
+            if !ERRORLEVEL! neq 0 (
+                echo [WARN] Failed to update Claude Code setting automatically.
+            )
+            echo.
+        )
+    )
+)
 
 :: Check if node is available
 where node >nul 2>nul
